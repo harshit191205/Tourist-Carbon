@@ -25,10 +25,10 @@ const TripCalculator = ({ onCalculate }) => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    const numeric = ["sightseeing", "adventure", "localtravel", "events"];
+    const numeric = ["sightseeing", "adventure", "localtravel", "events", "nights"];
     setFormData((prev) => ({
       ...prev,
-      [name]: numeric.includes(name) ? parseInt(value || 0, 10) || 0 : value,
+      [name]: numeric.includes(name) ? parseInt(value, 10) || 0 : value,
     }));
 
     if (name === "origin" || name === "destination" || name === "transportMode") {
@@ -40,7 +40,7 @@ const TripCalculator = ({ onCalculate }) => {
 
   const handleCalculateDistance = async () => {
     if (!formData.origin || !formData.destination) {
-      setDistanceError("Please enter both origin and destination.");
+      setDistanceError("Please enter both origin and destination");
       return;
     }
 
@@ -66,7 +66,7 @@ const TripCalculator = ({ onCalculate }) => {
     } catch (err) {
       console.error(err);
       setDistanceError(
-        "Could not calculate distance. Please check locations or enter distance manually."
+        "Could not calculate distance. Please enter distance manually."
       );
       setFormData((prev) => ({ ...prev, calculatingDistance: false }));
     }
@@ -75,8 +75,13 @@ const TripCalculator = ({ onCalculate }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    if (!formData.distance) {
-      setDistanceError("Please calculate or enter the distance.");
+    if (!formData.distance || formData.distance <= 0) {
+      setDistanceError("Please calculate or enter a valid distance");
+      return;
+    }
+
+    if (!formData.nights || formData.nights <= 0) {
+      alert("Please enter the number of nights");
       return;
     }
 
@@ -87,7 +92,7 @@ const TripCalculator = ({ onCalculate }) => {
 
     const accommodationData = {
       type: formData.accommodationType,
-      nights: parseInt(formData.nights || 0, 10),
+      nights: parseInt(formData.nights, 10),
     };
 
     const activityData = {
@@ -108,97 +113,120 @@ const TripCalculator = ({ onCalculate }) => {
   };
 
   const transportModes = [
-    { value: "flight", label: "Flight ✈️" },
-    { value: "train", label: "Train 🚆" },
-    { value: "bus", label: "Bus 🚌" },
-    { value: "car", label: "Car 🚗" },
-    { value: "motorcycle", label: "Motorcycle 🏍️" },
-    { value: "walk", label: "Walk 🚶" },
+    { value: "flight", icon: "✈️", label: "Flight", color: "red" },
+    { value: "train", icon: "🚆", label: "Train", color: "emerald" },
+    { value: "bus", icon: "🚌", label: "Bus", color: "blue" },
+    { value: "car", icon: "🚗", label: "Car", color: "slate" },
+    { value: "motorcycle", icon: "🏍️", label: "Motorcycle", color: "orange" },
+    { value: "walk", icon: "🚶", label: "Walk", color: "green" },
   ];
 
   const purposes = [
-    { value: "leisure", label: "Leisure / Vacation 🏖️" },
-    { value: "business", label: "Business 💼" },
-    { value: "education", label: "Education 🎓" },
-    { value: "family", label: "Family Visit 👨‍👩‍👧‍👦" },
+    { value: "leisure", icon: "🏖️", label: "Leisure" },
+    { value: "business", icon: "💼", label: "Business" },
+    { value: "education", icon: "🎓", label: "Education" },
+    { value: "family", icon: "👨‍👩‍👧‍👦", label: "Family" },
   ];
 
+  const accommodationTypes = [
+    { value: "hotel", icon: "🏨", label: "Hotel", impact: "High" },
+    { value: "hostel", icon: "🏠", label: "Hostel", impact: "Medium" },
+    { value: "homestay", icon: "🏡", label: "Homestay", impact: "Low" },
+    { value: "ecoresort", icon: "🌿", label: "Eco-resort", impact: "Minimal" },
+  ];
+
+  const activities = [
+    { key: "sightseeing", icon: "🗺️", label: "Sightseeing" },
+    { key: "adventure", icon: "🧗", label: "Adventure" },
+    { key: "localtravel", icon: "🚕", label: "Local Travel" },
+    { key: "events", icon: "🎭", label: "Events" },
+  ];
+
+  const currentTotal = 
+    formData.sightseeing + formData.adventure + formData.localtravel + formData.events;
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1.7fr,1fr] gap-4">
-      {/* LEFT: main form */}
-      <div className="card p-6 space-y-6">
-        <div className="flex items-center justify-between">
+    <div className="grid grid-cols-1 xl:grid-cols-[1.5fr,1fr] gap-6 animate-fade-in">
+      {/* Main Form */}
+      <div className="card p-8 space-y-8">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-700/50">
           <div>
-            <h2 className="text-lg font-semibold">Plan a new trip</h2>
-            <p className="text-xs text-slate-400">
-              Choose mode, set route, then stay and activities.
+            <h2 className="text-2xl font-bold gradient-text mb-1">Plan Your Trip</h2>
+            <p className="text-sm text-slate-400">
+              Calculate your journey's environmental impact
             </p>
           </div>
-          <span className="text-[11px] px-2 py-1 rounded-md bg-slate-800 text-slate-300 border border-slate-700">
-            Step 1 · Input
-          </span>
+          <span className="badge badge-info">Step 1 of 2</span>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Transport */}
+        <form onSubmit={handleSubmit} className="space-y-8">
+          {/* Transport Mode Selection */}
           <section>
-            <h3 className="section-label">Transport</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {transportModes.map((m) => (
+            <h3 className="section-label">🚀 Transport Mode</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              {transportModes.map((mode) => (
                 <button
-                  key={m.value}
+                  key={mode.value}
                   type="button"
                   onClick={() =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      transportMode: m.value,
+                    setFormData({
+                      ...formData,
+                      transportMode: mode.value,
                       distance: "",
                       routeInfo: "",
-                    }))
+                    })
                   }
-                  className={`px-3 py-2 rounded-lg border text-sm text-left ${
-                    formData.transportMode === m.value
-                      ? "border-emerald-400 bg-emerald-500/10 text-emerald-300"
-                      : "border-slate-700 bg-slate-900/80 text-slate-300 hover:border-slate-500"
+                  className={`mode-pill ${
+                    formData.transportMode === mode.value ? "active" : ""
                   }`}
                 >
-                  {m.label}
+                  <div className="mode-icon">{mode.icon}</div>
+                  <div className={`text-xs font-bold ${
+                    formData.transportMode === mode.value
+                      ? "text-emerald-400"
+                      : "text-slate-400"
+                  }`}>
+                    {mode.label}
+                  </div>
                 </button>
               ))}
             </div>
           </section>
 
-          {/* Origin / destination */}
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <h3 className="section-label">Origin</h3>
-              <input
-                type="text"
-                name="origin"
-                value={formData.origin}
-                onChange={handleChange}
-                placeholder="e.g., New Delhi, India"
-                className="input-base"
-                required
-              />
+          {/* Route Details */}
+          <section className="space-y-4">
+            <h3 className="section-label">📍 Route Details</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                  Origin City
+                </label>
+                <input
+                  type="text"
+                  name="origin"
+                  value={formData.origin}
+                  onChange={handleChange}
+                  placeholder="e.g., New Delhi, India"
+                  className="input-base"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                  Destination City
+                </label>
+                <input
+                  type="text"
+                  name="destination"
+                  value={formData.destination}
+                  onChange={handleChange}
+                  placeholder="e.g., Paris, France"
+                  className="input-base"
+                  required
+                />
+              </div>
             </div>
-            <div>
-              <h3 className="section-label">Destination</h3>
-              <input
-                type="text"
-                name="destination"
-                value={formData.destination}
-                onChange={handleChange}
-                placeholder="e.g., Paris, France"
-                className="input-base"
-                required
-              />
-            </div>
-          </section>
 
-          {/* Distance */}
-          <section>
-            <h3 className="section-label">Distance</h3>
             <button
               type="button"
               onClick={handleCalculateDistance}
@@ -207,100 +235,149 @@ const TripCalculator = ({ onCalculate }) => {
                 !formData.origin ||
                 !formData.destination
               }
-              className="btn-primary w-full justify-center mb-2"
+              className="btn-primary w-full"
             >
-              {formData.calculatingDistance
-                ? "Calculating route..."
-                : "Calculate distance"}
+              {formData.calculatingDistance ? (
+                <>
+                  <span className="animate-spin">⏳</span>
+                  Calculating route...
+                </>
+              ) : (
+                <>
+                  <span>🗺️</span>
+                  Calculate Distance
+                </>
+              )}
             </button>
 
-            <label className="block text-xs font-medium text-slate-400 mb-1">
-              Distance (km)
-              {formData.distance && (
-                <span className="ml-1 text-emerald-400 font-normal">✓</span>
-              )}
-            </label>
-            <input
-              type="number"
-              name="distance"
-              value={formData.distance}
-              onChange={handleChange}
-              min="1"
-              placeholder="Auto-calculated or enter manually"
-              className="input-base"
-              required
-            />
-            {distanceInfo && (
-              <p className="mt-1 text-xs text-emerald-300">{distanceInfo}</p>
-            )}
-            {distanceError && (
-              <p className="mt-1 text-xs text-red-400">{distanceError}</p>
-            )}
-          </section>
-
-          {/* Purpose + accommodation */}
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <h3 className="section-label">Purpose</h3>
-              <select
-                name="purpose"
-                value={formData.purpose}
+              <label className="block text-sm font-semibold text-slate-300 mb-2">
+                Distance (km)
+                {formData.distance && (
+                  <span className="ml-2 text-emerald-400 text-xs">✓ Calculated</span>
+                )}
+              </label>
+              <input
+                type="number"
+                name="distance"
+                value={formData.distance}
                 onChange={handleChange}
+                min="1"
+                step="0.1"
+                placeholder="Auto-calculated or enter manually"
                 className="input-base"
-              >
-                {purposes.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
+                required
+              />
+              {distanceInfo && (
+                <div className="mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+                  <p className="text-sm font-medium text-emerald-300">
+                    ✓ {distanceInfo}
+                  </p>
+                </div>
+              )}
+              {distanceError && (
+                <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                  <p className="text-sm font-medium text-red-300">
+                    ⚠️ {distanceError}
+                  </p>
+                </div>
+              )}
             </div>
+
+            {/* Purpose Pills */}
             <div>
-              <h3 className="section-label">Accommodation</h3>
-              <div className="space-y-2">
-                <select
-                  name="accommodationType"
-                  value={formData.accommodationType}
-                  onChange={handleChange}
-                  className="input-base"
-                >
-                  <option value="hotel">Hotel 🏨</option>
-                  <option value="hostel">Hostel 🏠</option>
-                  <option value="homestay">Homestay 🏡</option>
-                  <option value="ecoresort">Eco-resort 🌿</option>
-                </select>
-                <input
-                  type="number"
-                  name="nights"
-                  value={formData.nights}
-                  onChange={handleChange}
-                  min="0"
-                  placeholder="Nights of stay"
-                  className="input-base"
-                  required
-                />
+              <label className="block text-sm font-semibold text-slate-300 mb-3">
+                Trip Purpose
+              </label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {purposes.map((purpose) => (
+                  <button
+                    key={purpose.value}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, purpose: purpose.value })}
+                    className={`mode-pill ${
+                      formData.purpose === purpose.value ? "active" : ""
+                    }`}
+                  >
+                    <div className="mode-icon text-3xl">{purpose.icon}</div>
+                    <div className={`text-xs font-bold ${
+                      formData.purpose === purpose.value
+                        ? "text-emerald-400"
+                        : "text-slate-400"
+                    }`}>
+                      {purpose.label}
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
           </section>
 
-          {/* Activities */}
-          <section>
-            <h3 className="section-label">Activities</h3>
+          {/* Accommodation */}
+          <section className="space-y-4">
+            <h3 className="section-label">🏨 Accommodation</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                { key: "sightseeing", label: "Sightseeing 🗺️" },
-                { key: "adventure", label: "Adventure 🧗" },
-                { key: "localtravel", label: "Local travel 🚕" },
-                { key: "events", label: "Events 🎭" },
-              ].map((a) => (
-                <div key={a.key}>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
-                    {a.label}
+              {accommodationTypes.map((type) => (
+                <button
+                  key={type.value}
+                  type="button"
+                  onClick={() =>
+                    setFormData({ ...formData, accommodationType: type.value })
+                  }
+                  className={`mode-pill ${
+                    formData.accommodationType === type.value ? "active" : ""
+                  }`}
+                >
+                  <div className="mode-icon">{type.icon}</div>
+                  <div className={`text-xs font-bold ${
+                    formData.accommodationType === type.value
+                      ? "text-emerald-400"
+                      : "text-slate-400"
+                  }`}>
+                    {type.label}
+                  </div>
+                  <div className={`text-[10px] font-medium mt-1 ${
+                    type.impact === "Minimal" ? "text-emerald-400" :
+                    type.impact === "Low" ? "text-blue-400" :
+                    type.impact === "Medium" ? "text-amber-400" : "text-red-400"
+                  }`}>
+                    {type.impact} Impact
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-300 mb-2">
+                Number of Nights
+              </label>
+              <input
+                type="number"
+                name="nights"
+                value={formData.nights}
+                onChange={handleChange}
+                min="1"
+                placeholder="e.g., 3"
+                className="input-base"
+                required
+              />
+            </div>
+          </section>
+
+          {/* Activities */}
+          <section className="space-y-4">
+            <h3 className="section-label">🎯 Activities (Optional)</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {activities.map((activity) => (
+                <div key={activity.key}>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2 flex items-center gap-2">
+                    <span>{activity.icon}</span>
+                    {activity.label}
                   </label>
                   <input
                     type="number"
-                    name={a.key}
-                    value={formData[a.key]}
+                    name={activity.key}
+                    value={formData[activity.key]}
                     onChange={handleChange}
                     min="0"
                     className="input-base"
@@ -311,56 +388,60 @@ const TripCalculator = ({ onCalculate }) => {
             </div>
           </section>
 
-          {/* Submit */}
-          <section className="pt-1">
-            <button type="submit" className="btn-primary w-full justify-center">
-              Generate footprint report
-            </button>
-          </section>
+          {/* Submit Button */}
+          <button type="submit" className="btn-primary w-full text-base py-4">
+            <span className="text-xl">🌍</span>
+            Generate Carbon Footprint Report
+          </button>
         </form>
       </div>
 
-      {/* RIGHT: summary panel */}
-      <div className="card p-5 flex flex-col gap-4">
-        <div>
-          <h3 className="section-label">Current setup</h3>
-          <p className="text-sm text-slate-200">
-            {formData.origin && formData.destination
-              ? `${formData.origin} → ${formData.destination}`
-              : "Set origin & destination"}
-          </p>
-          <p className="text-xs text-slate-400 mt-1">
-            Mode:{" "}
-            <span className="font-medium">
-              {formData.transportMode.toUpperCase()}
-            </span>{" "}
-            · Distance:{" "}
-            <span className="font-medium">
-              {formData.distance ? `${formData.distance} km` : "not calculated"}
-            </span>
-          </p>
-        </div>
+      {/* Summary Panel */}
+      <div className="space-y-6">
+        <div className="card p-6 sticky top-24">
+          <h3 className="section-label">📊 Trip Summary</h3>
+          
+          <div className="space-y-4">
+            <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
+              <p className="text-xs font-semibold text-slate-400 mb-2">Route</p>
+              <p className="text-sm font-bold text-slate-200">
+                {formData.origin && formData.destination
+                  ? `${formData.origin} → ${formData.destination}`
+                  : "Not set"}
+              </p>
+            </div>
 
-        <div className="grid grid-cols-2 gap-3 text-xs">
-          <div className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2">
-            <p className="text-slate-400">Nights</p>
-            <p className="text-base font-semibold">
-              {formData.nights || 0}
-            </p>
-          </div>
-          <div className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2">
-            <p className="text-slate-400">Activities</p>
-            <p className="text-base font-semibold">
-              {formData.sightseeing +
-                formData.adventure +
-                formData.localtravel +
-                formData.events}
-            </p>
-          </div>
-        </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="stat-card">
+                <div className="stat-value">{formData.transportMode.toUpperCase()}</div>
+                <div className="stat-label">Transport</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-value">
+                  {formData.distance ? `${formData.distance} km` : "—"}
+                </div>
+                <div className="stat-label">Distance</div>
+              </div>
+            </div>
 
-        <div className="mt-auto text-[11px] text-slate-500 border-t border-slate-800 pt-3">
-          Tip: trains and shorter distances usually reduce emissions the most.
+            <div className="grid grid-cols-2 gap-3">
+              <div className="stat-card">
+                <div className="stat-value">{formData.nights || 0}</div>
+                <div className="stat-label">Nights</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-value">{currentTotal}</div>
+                <div className="stat-label">Activities</div>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+              <p className="text-xs font-semibold text-emerald-400 mb-1">💡 Tip</p>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Choose trains and eco-resorts to minimize your carbon footprint
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
