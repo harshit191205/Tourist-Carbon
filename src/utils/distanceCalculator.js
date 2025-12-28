@@ -1,463 +1,296 @@
-import axios from 'axios';
-
-const NOMINATIM_API = 'https://nominatim.openstreetmap.org';
-const WGS84_A = 6378137.0;
-const WGS84_B = 6356752.314245;
-const WGS84_F = 1 / 298.257223563;
-
-const CACHE_EXPIRY = 7 * 24 * 60 * 60 * 1000;
-const CACHE_KEY_PREFIX = 'tourist_carbon_distance_';
-
-const getCachedDistance = (origin, destination, mode) => {
+/**
+ * Geocode location name to coordinates using Nominatim (OpenStreetMap)
+ */
+export const geocodeLocation = async (locationName) => {
   try {
-    const cacheKey = `${CACHE_KEY_PREFIX}${origin}_${destination}_${mode}`.toLowerCase().replace(/\s+/g, '_');
-    const cached = localStorage.getItem(cacheKey);
-    
-    if (cached) {
-      const data = JSON.parse(cached);
-      const now = Date.now();
-      
-      if (now - data.timestamp < CACHE_EXPIRY) {
-        console.log('✅ Using cached distance');
-        return data.result;
-      } else {
-        localStorage.removeItem(cacheKey);
-      }
-    }
-  } catch (error) {
-    console.warn('Cache read error:', error);
-  }
-  return null;
-};
-
-const setCachedDistance = (origin, destination, mode, result) => {
-  try {
-    const cacheKey = `${CACHE_KEY_PREFIX}${origin}_${destination}_${mode}`.toLowerCase().replace(/\s+/g, '_');
-    const cacheData = {
-      result: result,
-      timestamp: Date.now()
-    };
-    localStorage.setItem(cacheKey, JSON.stringify(cacheData));
-    console.log('💾 Distance cached for future use');
-  } catch (error) {
-    console.warn('Cache write error:', error);
-  }
-};
-
-const vincentyDistance = (lat1, lon1, lat2, lon2) => {
-  const φ1 = toRadians(lat1);
-  const φ2 = toRadians(lat2);
-  const λ1 = toRadians(lon1);
-  const λ2 = toRadians(lon2);
-  
-  const L = λ2 - λ1;
-  const U1 = Math.atan((1 - WGS84_F) * Math.tan(φ1));
-  const U2 = Math.atan((1 - WGS84_F) * Math.tan(φ2));
-  
-  const sinU1 = Math.sin(U1), cosU1 = Math.cos(U1);
-  const sinU2 = Math.sin(U2), cosU2 = Math.cos(U2);
-  
-  let λ = L, λPrev, iterLimit = 100;
-  let sinλ, cosλ, sinσ, cosσ, σ, sinα, cos2αM, cos2σM, C;
-  
-  do {
-    sinλ = Math.sin(λ);
-    cosλ = Math.cos(λ);
-    const sinSqσ = (cosU2 * sinλ) ** 2 + 
-                   (cosU1 * sinU2 - sinU1 * cosU2 * cosλ) ** 2;
-    sinσ = Math.sqrt(sinSqσ);
-    
-    if (sinσ === 0) return 0;
-    
-    cosσ = sinU1 * sinU2 + cosU1 * cosU2 * cosλ;
-    σ = Math.atan2(sinσ, cosσ);
-    sinα = cosU1 * cosU2 * sinλ / sinσ;
-    cos2αM = 1 - sinα ** 2;
-    cos2σM = cosσ - 2 * sinU1 * sinU2 / cos2αM;
-    
-    if (isNaN(cos2σM)) cos2σM = 0;
-    
-    C = WGS84_F / 16 * cos2αM * (4 + WGS84_F * (4 - 3 * cos2αM));
-    λPrev = λ;
-    λ = L + (1 - C) * WGS84_F * sinα *
-        (σ + C * sinσ * (cos2σM + C * cosσ * (-1 + 2 * cos2σM ** 2)));
-        
-  } while (Math.abs(λ - λPrev) > 1e-12 && --iterLimit > 0);
-  
-  if (iterLimit === 0) {
-    console.warn('Vincenty did not converge, using Haversine');
-    return haversineDistance(lat1, lon1, lat2, lon2);
-  }
-  
-  const uSq = cos2αM * (WGS84_A ** 2 - WGS84_B ** 2) / (WGS84_B ** 2);
-  const A = 1 + uSq / 16384 * (4096 + uSq * (-768 + uSq * (320 - 175 * uSq)));
-  const B = uSq / 1024 * (256 + uSq * (-128 + uSq * (74 - 47 * uSq)));
-  const Δσ = B * sinσ * (cos2σM + B / 4 * 
-             (cosσ * (-1 + 2 * cos2σM ** 2) -
-              B / 6 * cos2σM * (-3 + 4 * sinσ ** 2) * (-3 + 4 * cos2σM ** 2)));
-  
-  const distance = WGS84_B * A * (σ - Δσ);
-  
-  return distance / 1000;
-};
-
-const haversineDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6371;
-  const φ1 = toRadians(lat1);
-  const φ2 = toRadians(lat2);
-  const Δφ = toRadians(lat2 - lat1);
-  const Δλ = toRadians(lon2 - lon1);
-  
-  const a = Math.sin(Δφ / 2) ** 2 +
-            Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  
-  return R * c;
-};
-
-const toRadians = (degrees) => degrees * (Math.PI / 180);
-
-const getModeAdjustment = (gcdKm, mode, originLat, destLat) => {
-  let factor = 1.0;
-  let description = '';
-  
-  const latDiff = Math.abs(destLat - originLat);
-  const isTranscontinental = gcdKm > 5000;
-  const isMountainous = latDiff > 20 && gcdKm < 2000;
-  
-  switch (mode) {
-    case 'flight': {
-      if (gcdKm < 500) {
-        factor = 1.09;
-        description = 'Short-haul flight (+9% for airport procedures & routing)';
-      } else if (gcdKm < 1500) {
-        factor = 1.06;
-        description = 'Regional flight (+6% for ATC routing)';
-      } else if (gcdKm < 3700) {
-        factor = 1.04;
-        description = 'Medium-haul flight (+4% for routing)';
-      } else if (gcdKm < 8000) {
-        factor = 1.03;
-        description = 'Long-haul flight (+3% for routing)';
-      } else {
-        factor = 1.02;
-        description = 'Ultra long-haul flight (+2% for routing)';
-      }
-      break;
-    }
-    
-    case 'train': {
-      if (gcdKm < 150) {
-        factor = 1.18;
-        description = 'Local/regional rail (+18% for stops & track routing)';
-      } else if (gcdKm < 500) {
-        factor = 1.12;
-        description = 'Regional train (+12% for track routing)';
-      } else if (gcdKm < 1500) {
-        factor = 1.10;
-        description = 'Intercity rail (+10% for track routing)';
-      } else {
-        factor = 1.08;
-        description = 'Long-distance rail (+8% for efficient routing)';
-      }
-      
-      if (isMountainous) {
-        factor += 0.07;
-        description += ' (mountainous terrain)';
-      }
-      break;
-    }
-    
-    case 'bus':
-    case 'car':
-    case 'motorcycle': {
-      if (gcdKm < 50) {
-        factor = 1.40;
-        description = 'Urban roads (+40% for city routing & traffic)';
-      } else if (gcdKm < 150) {
-        factor = 1.28;
-        description = 'Regional roads (+28% for routing)';
-      } else if (gcdKm < 500) {
-        factor = 1.20;
-        description = 'Highway route (+20% for routing)';
-      } else if (gcdKm < 1500) {
-        factor = 1.16;
-        description = 'Long-distance highway (+16%)';
-      } else {
-        factor = 1.15;
-        description = 'Transcontinental highway (+15%)';
-      }
-      
-      if (isMountainous) {
-        factor += 0.10;
-        description += ' (mountain roads)';
-      }
-      
-      if (isTranscontinental) {
-        factor += 0.05;
-        description += ' (transcontinental)';
-      }
-      break;
-    }
-    
-    case 'bicycle':
-    case 'walk': {
-      if (gcdKm < 5) {
-        factor = 1.50;
-        description = 'Walking/cycling paths (+50% urban routing)';
-      } else if (gcdKm < 20) {
-        factor = 1.35;
-        description = 'Cycling routes (+35% for safe paths)';
-      } else {
-        factor = 1.28;
-        description = 'Long-distance cycling (+28%)';
-      }
-      break;
-    }
-    
-    default:
-      factor = 1.0;
-      description = 'Direct geodesic distance (default)';
-  }
-  
-  return { factor, description };
-};
-
-export const geocodeLocation = async (location, retries = 3) => {
-  location = location.trim();
-  
-  for (let attempt = 0; attempt < retries; attempt++) {
-    try {
-      console.log(`🔍 Geocoding attempt ${attempt + 1}: "${location}"`);
-      
-      const response = await axios.get(`${NOMINATIM_API}/search`, {
-        params: {
-          q: location,
-          format: 'json',
-          limit: 5,
-          addressdetails: 1,
-          'accept-language': 'en'
-        },
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationName)}&limit=1`,
+      {
         headers: {
-          'User-Agent': 'TouristCarbonCalculator/3.0 (Educational Project)'
-        },
-        timeout: 15000
-      });
-      
-      if (response.data && response.data.length > 0) {
-        const result = response.data.find(r => 
-          r.type === 'city' || 
-          r.type === 'town' ||
-          r.type === 'administrative' || 
-          r.class === 'place' ||
-          r.class === 'boundary'
-        ) || response.data[0];
-        
-        console.log(`✅ Found: ${result.display_name}`);
-        
-        return {
-          lat: parseFloat(result.lat),
-          lon: parseFloat(result.lon),
-          displayName: result.display_name,
-          country: result.address?.country || 'Unknown',
-          city: result.address?.city || 
-                result.address?.town || 
-                result.address?.village || 
-                result.name || 'Unknown',
-          state: result.address?.state || '',
-          type: result.type,
-          importance: result.importance
-        };
+          'User-Agent': 'TouristCarbonFootprint/1.0' // Required by Nominatim
+        }
       }
-    } catch (error) {
-      console.warn(`⚠️ Geocoding attempt ${attempt + 1} failed:`, error.message);
-      
-      if (attempt < retries - 1) {
-        const waitTime = Math.pow(2, attempt) * 1000;
-        console.log(`⏳ Waiting ${waitTime}ms before retry...`);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-      }
-    }
-  }
-  
-  throw new Error(`Could not geocode "${location}". Please try format: "City, Country" (e.g., "New Delhi, India")`);
-};
-
-export const calculateTravelDistance = async (origin, destination, transportMode = 'flight') => {
-  try {
-    console.log(`\n🗺️  Calculating Distance`);
-    console.log(`   Route: ${origin} → ${destination}`);
-    console.log(`   Mode: ${transportMode}`);
-    
-    const cached = getCachedDistance(origin, destination, transportMode);
-    if (cached) {
-      return cached;
-    }
-    
-    console.log(`\n🌍 Geocoding locations...`);
-    const [originCoords, destCoords] = await Promise.all([
-      geocodeLocation(origin),
-      geocodeLocation(destination)
-    ]);
-    
-    console.log(`\n📍 Origin: ${originCoords.city}, ${originCoords.country}`);
-    console.log(`   Coordinates: ${originCoords.lat.toFixed(4)}, ${originCoords.lon.toFixed(4)}`);
-    console.log(`📍 Destination: ${destCoords.city}, ${destCoords.country}`);
-    console.log(`   Coordinates: ${destCoords.lat.toFixed(4)}, ${destCoords.lon.toFixed(4)}`);
-    
-    const gcdKm = vincentyDistance(
-      originCoords.lat,
-      originCoords.lon,
-      destCoords.lat,
-      destCoords.lon
     );
     
-    console.log(`\n🌐 Geodesic distance (Vincenty): ${gcdKm.toFixed(2)} km`);
+    const data = await response.json();
     
-    const adjustment = getModeAdjustment(
-      gcdKm, 
-      transportMode,
-      originCoords.lat,
-      destCoords.lat
-    );
-    
-    const actualDistance = gcdKm * adjustment.factor;
-    
-    console.log(`\n✅ ${transportMode.toUpperCase()} distance: ${actualDistance.toFixed(1)} km`);
-    console.log(`   ${adjustment.description}`);
-    console.log(`   Accuracy: Vincenty formula (±0.5mm) + empirical routing factors`);
-    
-    const result = {
-      distance: Math.round(actualDistance),
-      geodesicDistance: Math.round(gcdKm),
-      adjustmentFactor: adjustment.factor,
-      adjustmentPercent: ((adjustment.factor - 1) * 100).toFixed(1),
-      origin: originCoords.displayName,
-      destination: destCoords.displayName,
-      originCity: originCoords.city,
-      destCity: destCoords.city,
-      originCountry: originCoords.country,
-      destCountry: destCoords.country,
-      routeType: adjustment.description,
-      transportMode: transportMode,
-      coordinates: {
-        origin: { lat: originCoords.lat, lon: originCoords.lon },
-        destination: { lat: destCoords.lat, lon: destCoords.lon }
-      },
-      calculationMethod: 'Vincenty (WGS84 ellipsoid)',
-      accuracy: '±0.5mm geodesic + mode-specific routing adjustment',
-      calculatedAt: new Date().toISOString()
-    };
-    
-    setCachedDistance(origin, destination, transportMode, result);
-    
-    return result;
-    
-  } catch (error) {
-    console.error('\n❌ Distance calculation error:', error);
-    throw new Error(`Distance calculation failed: ${error.message}`);
-  }
-};
-
-export const validateDistance = (origin, dest, calculatedKm) => {
-  const knownRoutes = {
-    'delhi-mumbai': { min: 1140, max: 1420, optimal: 1400 },
-    'delhi-bangalore': { min: 1740, max: 2100, optimal: 2100 },
-    'delhi-kolkata': { min: 1300, max: 1550, optimal: 1470 },
-    'mumbai-bangalore': { min: 840, max: 1020, optimal: 980 },
-    'delhi-chennai': { min: 1760, max: 2180, optimal: 2180 },
-    'mumbai-kolkata': { min: 1650, max: 1950, optimal: 1950 },
-    'london-paris': { min: 340, max: 460, optimal: 344 },
-    'newyork-losangeles': { min: 3900, max: 4500, optimal: 3944 },
-    'tokyo-osaka': { min: 400, max: 520, optimal: 515 },
-    'sydney-melbourne': { min: 700, max: 880, optimal: 880 }
-  };
-  
-  const routeKey = `${origin.toLowerCase().split(',')[0]}-${dest.toLowerCase().split(',')[0]}`;
-  
-  if (knownRoutes[routeKey]) {
-    const route = knownRoutes[routeKey];
-    if (calculatedKm >= route.min && calculatedKm <= route.max) {
-      const accuracy = Math.abs(calculatedKm - route.optimal) / route.optimal * 100;
-      console.log(`✅ Distance validated: ${accuracy.toFixed(1)}% deviation from known route`);
-      return { valid: true, accuracy: accuracy.toFixed(1) };
+    if (data && data.length > 0) {
+      return {
+        success: true,
+        lat: parseFloat(data[0].lat),
+        lng: parseFloat(data[0].lon),
+        displayName: data[0].display_name
+      };
     } else {
-      console.warn(`⚠️  Distance ${calculatedKm}km outside expected range [${route.min}-${route.max}]`);
-      return { valid: false, expected: route.optimal };
-    }
-  }
-  
-  return { valid: null, message: 'Unknown route - cannot validate' };
-};
-
-export const clearOldCache = () => {
-  try {
-    const now = Date.now();
-    let cleared = 0;
-    
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith(CACHE_KEY_PREFIX)) {
-        try {
-          const data = JSON.parse(localStorage.getItem(key));
-          if (now - data.timestamp > CACHE_EXPIRY) {
-            localStorage.removeItem(key);
-            cleared++;
-          }
-        } catch (e) {
-          localStorage.removeItem(key);
-          cleared++;
-        }
-      }
-    }
-    
-    if (cleared > 0) {
-      console.log(`🧹 Cleared ${cleared} old cache entries`);
+      return {
+        success: false,
+        error: 'Location not found'
+      };
     }
   } catch (error) {
-    console.warn('Cache cleanup error:', error);
+    console.error('Geocoding error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
   }
 };
 
-export const getCacheStats = () => {
+/**
+ * Calculate straight-line distance using Haversine formula
+ */
+export const calculateHaversineDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371; // Radius of Earth in kilometers
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = R * c;
+  
+  return Math.round(distance);
+};
+
+const toRad = (degrees) => {
+  return degrees * (Math.PI / 180);
+};
+
+/**
+ * Calculate road distance using OSRM (Open Source Routing Machine)
+ */
+export const calculateRoadDistance = async (originLat, originLng, destLat, destLng, transportMode) => {
   try {
-    let total = 0;
-    let valid = 0;
-    const now = Date.now();
+    // Map transport modes to OSRM profiles
+    const profileMap = {
+      car: 'driving',
+      motorcycle: 'driving',
+      bus: 'driving',
+      train: 'driving', // Use driving as approximation
+      bicycle: 'cycling',
+      walking: 'foot'
+    };
+
+    const profile = profileMap[transportMode] || 'driving';
     
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith(CACHE_KEY_PREFIX)) {
-        total++;
-        try {
-          const data = JSON.parse(localStorage.getItem(key));
-          if (now - data.timestamp < CACHE_EXPIRY) {
-            valid++;
-          }
-        } catch (e) {
-          // Invalid entry
-        }
+    const response = await fetch(
+      `https://router.project-osrm.org/route/v1/${profile}/${originLng},${originLat};${destLng},${destLat}?overview=false`
+    );
+    
+    const data = await response.json();
+    
+    if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+      const route = data.routes[0];
+      let distanceInKm = Math.round(route.distance / 1000);
+      const durationInMinutes = Math.round(route.duration / 60);
+      const durationInHours = (route.duration / 3600).toFixed(1);
+      
+      // Add adjustment for train routes (typically 10-15% longer than road)
+      if (transportMode === 'train') {
+        distanceInKm = Math.round(distanceInKm * 1.12);
       }
+      
+      return {
+        success: true,
+        distance: distanceInKm,
+        duration: durationInMinutes < 60 
+          ? `${durationInMinutes} mins` 
+          : `${durationInHours} hours`,
+        durationInMinutes: durationInMinutes
+      };
+    } else {
+      return {
+        success: false,
+        error: 'Route not found'
+      };
     }
+  } catch (error) {
+    console.error('Road distance calculation error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+/**
+ * Calculate flight distance (great circle distance + 5%)
+ */
+export const calculateFlightDistance = (lat1, lon1, lat2, lon2) => {
+  // For flights, use straight-line distance (great circle)
+  // Add ~5% for typical flight path deviations
+  const straightLine = calculateHaversineDistance(lat1, lon1, lat2, lon2);
+  const flightDistance = Math.round(straightLine * 1.05);
+  
+  // Estimate flight duration based on distance
+  // Average cruise speed: 800 km/h, plus taxi/takeoff/landing time
+  let durationHours;
+  if (flightDistance < 500) {
+    // Short haul: add 30 min for ground operations
+    durationHours = (flightDistance / 700 + 0.5).toFixed(1);
+  } else if (flightDistance < 3000) {
+    // Medium haul: add 45 min
+    durationHours = (flightDistance / 800 + 0.75).toFixed(1);
+  } else {
+    // Long haul: add 1 hour
+    durationHours = (flightDistance / 850 + 1).toFixed(1);
+  }
+  
+  return {
+    success: true,
+    distance: flightDistance,
+    duration: `${durationHours} hours`,
+    routeType: 'Flight path (great circle)'
+  };
+};
+
+/**
+ * Calculate train distance (approximation using road routes + 12%)
+ */
+export const calculateTrainDistance = async (originLat, originLng, destLat, destLng) => {
+  // Try to get road distance first
+  const roadResult = await calculateRoadDistance(originLat, originLng, destLat, destLng, 'train');
+  
+  if (roadResult.success) {
+    // Train routes are typically 10-15% longer than direct road routes
+    const trainDistance = Math.round(roadResult.distance * 1.12);
+    
+    // Average train speed: 80 km/h for regular trains
+    const durationHours = (trainDistance / 80).toFixed(1);
     
     return {
-      totalEntries: total,
-      validEntries: valid,
-      expiredEntries: total - valid
+      success: true,
+      distance: trainDistance,
+      duration: `${durationHours} hours`,
+      routeType: 'Estimated rail route'
     };
-  } catch (error) {
-    return { totalEntries: 0, validEntries: 0, expiredEntries: 0 };
   }
+  
+  // Fallback to straight-line distance + 20% if road route fails
+  const straightLine = calculateHaversineDistance(originLat, originLng, destLat, destLng);
+  const trainDistance = Math.round(straightLine * 1.2);
+  const durationHours = (trainDistance / 80).toFixed(1);
+  
+  return {
+    success: true,
+    distance: trainDistance,
+    duration: `${durationHours} hours`,
+    routeType: 'Estimated rail route (straight-line approximation)'
+  };
 };
 
-clearOldCache();
-
-export default {
-  geocodeLocation,
-  calculateTravelDistance,
-  vincentyDistance,
-  haversineDistance,
-  validateDistance,
-  clearOldCache,
-  getCacheStats
+/**
+ * Main function to calculate travel distance based on transport mode
+ * This matches your existing function signature exactly
+ */
+export const calculateTravelDistance = async (origin, destination, transportMode) => {
+  try {
+    if (!origin || !destination) {
+      throw new Error('Origin and destination are required');
+    }
+    
+    // Step 1: Geocode both locations
+    console.log('Geocoding origin:', origin);
+    const originGeo = await geocodeLocation(origin);
+    
+    if (!originGeo.success) {
+      throw new Error(`Could not find origin: ${origin}`);
+    }
+    
+    console.log('Geocoding destination:', destination);
+    const destGeo = await geocodeLocation(destination);
+    
+    if (!destGeo.success) {
+      throw new Error(`Could not find destination: ${destination}`);
+    }
+    
+    console.log('Origin coordinates:', originGeo.lat, originGeo.lng);
+    console.log('Destination coordinates:', destGeo.lat, destGeo.lng);
+    
+    let result;
+    
+    // Step 2: Calculate distance based on transport mode
+    switch (transportMode) {
+      case 'flight':
+        result = calculateFlightDistance(
+          originGeo.lat, originGeo.lng,
+          destGeo.lat, destGeo.lng
+        );
+        break;
+        
+      case 'train':
+        result = await calculateTrainDistance(
+          originGeo.lat, originGeo.lng,
+          destGeo.lat, destGeo.lng
+        );
+        break;
+        
+      case 'car':
+      case 'motorcycle':
+      case 'bus':
+        result = await calculateRoadDistance(
+          originGeo.lat, originGeo.lng,
+          destGeo.lat, destGeo.lng,
+          transportMode
+        );
+        if (result.success) {
+          const modeLabel = transportMode.charAt(0).toUpperCase() + transportMode.slice(1);
+          result.routeType = `${modeLabel} route`;
+        }
+        break;
+        
+      case 'bicycle':
+        result = await calculateRoadDistance(
+          originGeo.lat, originGeo.lng,
+          destGeo.lat, destGeo.lng,
+          'bicycle'
+        );
+        if (result.success) {
+          result.routeType = 'Cycling route';
+        }
+        break;
+        
+      default:
+        // Fallback to straight-line distance
+        const straightLine = calculateHaversineDistance(
+          originGeo.lat, originGeo.lng,
+          destGeo.lat, destGeo.lng
+        );
+        result = {
+          success: true,
+          distance: straightLine,
+          duration: 'N/A',
+          routeType: 'Straight-line distance'
+        };
+    }
+    
+    // Handle failure with fallback
+    if (!result.success) {
+      console.warn('Route calculation failed, using straight-line distance');
+      const straightLine = calculateHaversineDistance(
+        originGeo.lat, originGeo.lng,
+        destGeo.lat, destGeo.lng
+      );
+      result = {
+        success: true,
+        distance: straightLine,
+        duration: 'N/A',
+        routeType: 'Straight-line distance (route not available)'
+      };
+    }
+    
+    // Return result in the format expected by your TripCalculator
+    return {
+      distance: result.distance,
+      routeType: result.routeType,
+      duration: result.duration || 'N/A'
+    };
+    
+  } catch (error) {
+    console.error('Distance calculation error:', error);
+    throw error;
+  }
 };
