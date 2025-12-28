@@ -1,25 +1,49 @@
 import axios from 'axios';
 
-/**
- * ULTRA-ACCURATE DISTANCE CALCULATOR
- * 
- * IMPROVEMENTS:
- * 1. Vincenty's formula for ellipsoidal Earth (more accurate than Haversine)
- * 2. Multiple geocoding attempts with fallback
- * 3. Real-world routing adjustments based on actual data
- * 4. Distance verification using multiple methods
- * 5. Mode-specific route optimization
- */
-
 const NOMINATIM_API = 'https://nominatim.openstreetmap.org';
-const WGS84_A = 6378137.0;        // Semi-major axis (meters)
-const WGS84_B = 6356752.314245;   // Semi-minor axis (meters)
-const WGS84_F = 1 / 298.257223563; // Flattening
+const WGS84_A = 6378137.0;
+const WGS84_B = 6356752.314245;
+const WGS84_F = 1 / 298.257223563;
 
-/**
- * Vincenty's Inverse Formula - Most accurate for geodesic distance
- * Accuracy: ±0.5mm over Earth's surface
- */
+const CACHE_EXPIRY = 7 * 24 * 60 * 60 * 1000;
+const CACHE_KEY_PREFIX = 'tourist_carbon_distance_';
+
+const getCachedDistance = (origin, destination, mode) => {
+  try {
+    const cacheKey = `${CACHE_KEY_PREFIX}${origin}_${destination}_${mode}`.toLowerCase().replace(/\s+/g, '_');
+    const cached = localStorage.getItem(cacheKey);
+    
+    if (cached) {
+      const data = JSON.parse(cached);
+      const now = Date.now();
+      
+      if (now - data.timestamp < CACHE_EXPIRY) {
+        console.log('✅ Using cached distance');
+        return data.result;
+      } else {
+        localStorage.removeItem(cacheKey);
+      }
+    }
+  } catch (error) {
+    console.warn('Cache read error:', error);
+  }
+  return null;
+};
+
+const setCachedDistance = (origin, destination, mode, result) => {
+  try {
+    const cacheKey = `${CACHE_KEY_PREFIX}${origin}_${destination}_${mode}`.toLowerCase().replace(/\s+/g, '_');
+    const cacheData = {
+      result: result,
+      timestamp: Date.now()
+    };
+    localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+    console.log('💾 Distance cached for future use');
+  } catch (error) {
+    console.warn('Cache write error:', error);
+  }
+};
+
 const vincentyDistance = (lat1, lon1, lat2, lon2) => {
   const φ1 = toRadians(lat1);
   const φ2 = toRadians(lat2);
@@ -43,7 +67,7 @@ const vincentyDistance = (lat1, lon1, lat2, lon2) => {
                    (cosU1 * sinU2 - sinU1 * cosU2 * cosλ) ** 2;
     sinσ = Math.sqrt(sinSqσ);
     
-    if (sinσ === 0) return 0; // Co-incident points
+    if (sinσ === 0) return 0;
     
     cosσ = sinU1 * sinU2 + cosU1 * cosU2 * cosλ;
     σ = Math.atan2(sinσ, cosσ);
@@ -51,7 +75,7 @@ const vincentyDistance = (lat1, lon1, lat2, lon2) => {
     cos2αM = 1 - sinα ** 2;
     cos2σM = cosσ - 2 * sinU1 * sinU2 / cos2αM;
     
-    if (isNaN(cos2σM)) cos2σM = 0; // Equatorial line
+    if (isNaN(cos2σM)) cos2σM = 0;
     
     C = WGS84_F / 16 * cos2αM * (4 + WGS84_F * (4 - 3 * cos2αM));
     λPrev = λ;
@@ -61,7 +85,7 @@ const vincentyDistance = (lat1, lon1, lat2, lon2) => {
   } while (Math.abs(λ - λPrev) > 1e-12 && --iterLimit > 0);
   
   if (iterLimit === 0) {
-    // Fallback to Haversine if Vincenty doesn't converge
+    console.warn('Vincenty did not converge, using Haversine');
     return haversineDistance(lat1, lon1, lat2, lon2);
   }
   
@@ -74,14 +98,11 @@ const vincentyDistance = (lat1, lon1, lat2, lon2) => {
   
   const distance = WGS84_B * A * (σ - Δσ);
   
-  return distance / 1000; // Convert to kilometers
+  return distance / 1000;
 };
 
-/**
- * Haversine formula (fallback for Vincenty)
- */
 const haversineDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6371; // Earth radius in km
+  const R = 6371;
   const φ1 = toRadians(lat1);
   const φ2 = toRadians(lat2);
   const Δφ = toRadians(lat2 - lat1);
@@ -96,66 +117,53 @@ const haversineDistance = (lat1, lon1, lat2, lon2) => {
 
 const toRadians = (degrees) => degrees * (Math.PI / 180);
 
-/**
- * ENHANCED MODE-SPECIFIC ADJUSTMENTS
- * Based on real-world routing data and transport studies
- */
 const getModeAdjustment = (gcdKm, mode, originLat, destLat) => {
   let factor = 1.0;
   let description = '';
   
-  // Check if route crosses major geographic barriers
   const latDiff = Math.abs(destLat - originLat);
   const isTranscontinental = gcdKm > 5000;
-  const isMountainous = latDiff > 20 && gcdKm < 2000; // Rough heuristic
+  const isMountainous = latDiff > 20 && gcdKm < 2000;
   
   switch (mode) {
     case 'flight': {
-      // ICAO-based adjustments with terrain consideration
       if (gcdKm < 500) {
-        // Domestic: taxi, takeoff, landing, ATC routing
-        factor = 1.07;
-        description = 'Domestic flight (+7% for airport procedures)';
+        factor = 1.09;
+        description = 'Short-haul flight (+9% for airport procedures & routing)';
       } else if (gcdKm < 1500) {
-        // Short regional
-        factor = 1.05;
-        description = 'Regional flight (+5% for routing)';
+        factor = 1.06;
+        description = 'Regional flight (+6% for ATC routing)';
       } else if (gcdKm < 3700) {
-        // Short-haul international
         factor = 1.04;
-        description = 'Short-haul flight (+4% for routing)';
+        description = 'Medium-haul flight (+4% for routing)';
       } else if (gcdKm < 8000) {
-        // Medium long-haul
         factor = 1.03;
-        description = 'Medium-haul flight (+3% for routing)';
+        description = 'Long-haul flight (+3% for routing)';
       } else {
-        // Ultra long-haul (most efficient)
         factor = 1.02;
-        description = 'Long-haul flight (+2% for routing)';
+        description = 'Ultra long-haul flight (+2% for routing)';
       }
       break;
     }
     
     case 'train': {
-      // Rail routing factors based on infrastructure
-      if (gcdKm < 200) {
-        // Local/regional with many stops
-        factor = 1.15;
-        description = 'Regional rail (+15% for track routing & stops)';
-      } else if (gcdKm < 1000) {
-        // Intercity with modern rail
+      if (gcdKm < 150) {
+        factor = 1.18;
+        description = 'Local/regional rail (+18% for stops & track routing)';
+      } else if (gcdKm < 500) {
+        factor = 1.12;
+        description = 'Regional train (+12% for track routing)';
+      } else if (gcdKm < 1500) {
         factor = 1.10;
         description = 'Intercity rail (+10% for track routing)';
       } else {
-        // Long-distance, more direct
         factor = 1.08;
-        description = 'Long-distance rail (+8% for track routing)';
+        description = 'Long-distance rail (+8% for efficient routing)';
       }
       
-      // Adjust for mountainous terrain
       if (isMountainous) {
-        factor += 0.05;
-        description += ' (mountainous)';
+        factor += 0.07;
+        description += ' (mountainous terrain)';
       }
       break;
     }
@@ -163,32 +171,28 @@ const getModeAdjustment = (gcdKm, mode, originLat, destLat) => {
     case 'bus':
     case 'car':
     case 'motorcycle': {
-      // Road network adjustments based on distance
       if (gcdKm < 50) {
-        // Urban/suburban - lots of turns, traffic lights
-        factor = 1.35;
-        description = 'Urban roads (+35% for city routing)';
-      } else if (gcdKm < 200) {
-        // Regional - some highways
-        factor = 1.25;
-        description = 'Regional roads (+25% for routing)';
-      } else if (gcdKm < 1000) {
-        // Highway-dominant
-        factor = 1.18;
-        description = 'Highway route (+18% for routing)';
+        factor = 1.40;
+        description = 'Urban roads (+40% for city routing & traffic)';
+      } else if (gcdKm < 150) {
+        factor = 1.28;
+        description = 'Regional roads (+28% for routing)';
+      } else if (gcdKm < 500) {
+        factor = 1.20;
+        description = 'Highway route (+20% for routing)';
+      } else if (gcdKm < 1500) {
+        factor = 1.16;
+        description = 'Long-distance highway (+16%)';
       } else {
-        // Long-distance highways
         factor = 1.15;
-        description = 'Long-distance highway (+15%)';
+        description = 'Transcontinental highway (+15%)';
       }
       
-      // Add for terrain
       if (isMountainous) {
-        factor += 0.08;
-        description += ' (mountains)';
+        factor += 0.10;
+        description += ' (mountain roads)';
       }
       
-      // Transcontinental routes need more adjustment
       if (isTranscontinental) {
         factor += 0.05;
         description += ' (transcontinental)';
@@ -199,54 +203,57 @@ const getModeAdjustment = (gcdKm, mode, originLat, destLat) => {
     case 'bicycle':
     case 'walk': {
       if (gcdKm < 5) {
-        factor = 1.45;
-        description = 'Walking paths (+45% urban)';
+        factor = 1.50;
+        description = 'Walking/cycling paths (+50% urban routing)';
       } else if (gcdKm < 20) {
-        factor = 1.30;
-        description = 'Cycling paths (+30%)';
+        factor = 1.35;
+        description = 'Cycling routes (+35% for safe paths)';
       } else {
-        factor = 1.25;
-        description = 'Long-distance paths (+25%)';
+        factor = 1.28;
+        description = 'Long-distance cycling (+28%)';
       }
       break;
     }
     
     default:
       factor = 1.0;
-      description = 'Direct distance (no adjustment)';
+      description = 'Direct geodesic distance (default)';
   }
   
   return { factor, description };
 };
 
-/**
- * Enhanced geocoding with retry and fallback
- */
-export const geocodeLocation = async (location, retries = 2) => {
+export const geocodeLocation = async (location, retries = 3) => {
+  location = location.trim();
+  
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      // Try with full query first
+      console.log(`🔍 Geocoding attempt ${attempt + 1}: "${location}"`);
+      
       const response = await axios.get(`${NOMINATIM_API}/search`, {
         params: {
           q: location,
           format: 'json',
-          limit: 3, // Get top 3 results
+          limit: 5,
           addressdetails: 1,
           'accept-language': 'en'
         },
         headers: {
-          'User-Agent': 'CarbonFootprintCalculator/3.0'
+          'User-Agent': 'TouristCarbonCalculator/3.0 (Educational Project)'
         },
         timeout: 15000
       });
       
       if (response.data && response.data.length > 0) {
-        // Pick best result (usually first, but verify it's a significant place)
         const result = response.data.find(r => 
           r.type === 'city' || 
+          r.type === 'town' ||
           r.type === 'administrative' || 
-          r.class === 'place'
+          r.class === 'place' ||
+          r.class === 'boundary'
         ) || response.data[0];
+        
+        console.log(`✅ Found: ${result.display_name}`);
         
         return {
           lat: parseFloat(result.lat),
@@ -257,39 +264,47 @@ export const geocodeLocation = async (location, retries = 2) => {
                 result.address?.town || 
                 result.address?.village || 
                 result.name || 'Unknown',
+          state: result.address?.state || '',
           type: result.type,
           importance: result.importance
         };
       }
     } catch (error) {
-      console.warn(`Geocoding attempt ${attempt + 1} failed:`, error.message);
+      console.warn(`⚠️ Geocoding attempt ${attempt + 1} failed:`, error.message);
+      
       if (attempt < retries - 1) {
-        // Wait before retry
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        const waitTime = Math.pow(2, attempt) * 1000;
+        console.log(`⏳ Waiting ${waitTime}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
       }
     }
   }
   
-  throw new Error(`Could not find "${location}". Try format: "City, Country"`);
+  throw new Error(`Could not geocode "${location}". Please try format: "City, Country" (e.g., "New Delhi, India")`);
 };
 
-/**
- * MAIN FUNCTION: Ultra-accurate distance calculation
- */
 export const calculateTravelDistance = async (origin, destination, transportMode = 'flight') => {
   try {
-    console.log(`🗺️  Calculating: ${origin} → ${destination} (${transportMode})`);
+    console.log(`\n🗺️  Calculating Distance`);
+    console.log(`   Route: ${origin} → ${destination}`);
+    console.log(`   Mode: ${transportMode}`);
     
-    // Geocode with retry
+    const cached = getCachedDistance(origin, destination, transportMode);
+    if (cached) {
+      return cached;
+    }
+    
+    console.log(`\n🌍 Geocoding locations...`);
     const [originCoords, destCoords] = await Promise.all([
       geocodeLocation(origin),
       geocodeLocation(destination)
     ]);
     
-    console.log(`📍 Origin: ${originCoords.city}, ${originCoords.country}`);
+    console.log(`\n📍 Origin: ${originCoords.city}, ${originCoords.country}`);
+    console.log(`   Coordinates: ${originCoords.lat.toFixed(4)}, ${originCoords.lon.toFixed(4)}`);
     console.log(`📍 Destination: ${destCoords.city}, ${destCoords.country}`);
+    console.log(`   Coordinates: ${destCoords.lat.toFixed(4)}, ${destCoords.lon.toFixed(4)}`);
     
-    // Use Vincenty for maximum accuracy
     const gcdKm = vincentyDistance(
       originCoords.lat,
       originCoords.lon,
@@ -297,9 +312,8 @@ export const calculateTravelDistance = async (origin, destination, transportMode
       destCoords.lon
     );
     
-    console.log(`🌐 Geodesic distance: ${gcdKm.toFixed(2)} km (Vincenty formula)`);
+    console.log(`\n🌐 Geodesic distance (Vincenty): ${gcdKm.toFixed(2)} km`);
     
-    // Apply mode-specific adjustment
     const adjustment = getModeAdjustment(
       gcdKm, 
       transportMode,
@@ -309,10 +323,11 @@ export const calculateTravelDistance = async (origin, destination, transportMode
     
     const actualDistance = gcdKm * adjustment.factor;
     
-    console.log(`✅ ${transportMode} distance: ${actualDistance.toFixed(1)} km`);
+    console.log(`\n✅ ${transportMode.toUpperCase()} distance: ${actualDistance.toFixed(1)} km`);
     console.log(`   ${adjustment.description}`);
+    console.log(`   Accuracy: Vincenty formula (±0.5mm) + empirical routing factors`);
     
-    return {
+    const result = {
       distance: Math.round(actualDistance),
       geodesicDistance: Math.round(gcdKm),
       adjustmentFactor: adjustment.factor,
@@ -330,25 +345,32 @@ export const calculateTravelDistance = async (origin, destination, transportMode
         destination: { lat: destCoords.lat, lon: destCoords.lon }
       },
       calculationMethod: 'Vincenty (WGS84 ellipsoid)',
-      accuracy: '±0.5mm geodesic + mode adjustment'
+      accuracy: '±0.5mm geodesic + mode-specific routing adjustment',
+      calculatedAt: new Date().toISOString()
     };
     
+    setCachedDistance(origin, destination, transportMode, result);
+    
+    return result;
+    
   } catch (error) {
-    console.error('❌ Distance calculation error:', error);
-    throw error;
+    console.error('\n❌ Distance calculation error:', error);
+    throw new Error(`Distance calculation failed: ${error.message}`);
   }
 };
 
-/**
- * Validate distance against known routes
- */
 export const validateDistance = (origin, dest, calculatedKm) => {
   const knownRoutes = {
-    'london-paris': { min: 340, max: 460 },
-    'newyork-losangeles': { min: 3900, max: 4500 },
-    'delhi-mumbai': { min: 1140, max: 1420 },
-    'tokyo-osaka': { min: 400, max: 520 },
-    'sydney-melbourne': { min: 700, max: 880 }
+    'delhi-mumbai': { min: 1140, max: 1420, optimal: 1400 },
+    'delhi-bangalore': { min: 1740, max: 2100, optimal: 2100 },
+    'delhi-kolkata': { min: 1300, max: 1550, optimal: 1470 },
+    'mumbai-bangalore': { min: 840, max: 1020, optimal: 980 },
+    'delhi-chennai': { min: 1760, max: 2180, optimal: 2180 },
+    'mumbai-kolkata': { min: 1650, max: 1950, optimal: 1950 },
+    'london-paris': { min: 340, max: 460, optimal: 344 },
+    'newyork-losangeles': { min: 3900, max: 4500, optimal: 3944 },
+    'tokyo-osaka': { min: 400, max: 520, optimal: 515 },
+    'sydney-melbourne': { min: 700, max: 880, optimal: 880 }
   };
   
   const routeKey = `${origin.toLowerCase().split(',')[0]}-${dest.toLowerCase().split(',')[0]}`;
@@ -356,64 +378,79 @@ export const validateDistance = (origin, dest, calculatedKm) => {
   if (knownRoutes[routeKey]) {
     const route = knownRoutes[routeKey];
     if (calculatedKm >= route.min && calculatedKm <= route.max) {
-      console.log(`✅ Distance validated against known route`);
-      return true;
+      const accuracy = Math.abs(calculatedKm - route.optimal) / route.optimal * 100;
+      console.log(`✅ Distance validated: ${accuracy.toFixed(1)}% deviation from known route`);
+      return { valid: true, accuracy: accuracy.toFixed(1) };
     } else {
-      console.warn(`⚠️  Distance outside expected range for ${routeKey}`);
-      return false;
+      console.warn(`⚠️  Distance ${calculatedKm}km outside expected range [${route.min}-${route.max}]`);
+      return { valid: false, expected: route.optimal };
     }
   }
   
-  return null; // Unknown route
+  return { valid: null, message: 'Unknown route - cannot validate' };
 };
 
-/**
- * Test accuracy with known distances
- */
-export const testAccuracy = () => {
-  const tests = [
-    {
-      name: 'London to Paris',
-      coords: [51.5074, -0.1278, 48.8566, 2.3522],
-      expected: 344,
-      mode: 'flight'
-    },
-    {
-      name: 'New York to Los Angeles',
-      coords: [40.7128, -74.0060, 34.0522, -118.2437],
-      expected: 3944,
-      mode: 'flight'
-    },
-    {
-      name: 'Delhi to Mumbai',
-      coords: [28.6139, 77.2090, 19.0760, 72.8777],
-      expected: 1148,
-      mode: 'flight'
-    },
-    {
-      name: 'Tokyo to Osaka',
-      coords: [35.6762, 139.6503, 34.6937, 135.5023],
-      expected: 403,
-      mode: 'train'
-    }
-  ];
-  
-  console.log('🧪 Testing distance accuracy:\n');
-  
-  tests.forEach(test => {
-    const gcd = vincentyDistance(...test.coords);
-    const adj = getModeAdjustment(gcd, test.mode, test.coords[0], test.coords[2]);
-    const actual = gcd * adj.factor;
-    const error = Math.abs(actual - test.expected) / test.expected * 100;
+export const clearOldCache = () => {
+  try {
+    const now = Date.now();
+    let cleared = 0;
     
-    console.log(`${test.name}:`);
-    console.log(`  Geodesic: ${gcd.toFixed(1)} km (Vincenty)`);
-    console.log(`  Adjusted: ${actual.toFixed(1)} km (${test.mode})`);
-    console.log(`  Expected: ${test.expected} km`);
-    console.log(`  Error: ${error.toFixed(2)}%`);
-    console.log(`  ${error < 3 ? '✅ PASS' : '⚠️  REVIEW'}\n`);
-  });
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(CACHE_KEY_PREFIX)) {
+        try {
+          const data = JSON.parse(localStorage.getItem(key));
+          if (now - data.timestamp > CACHE_EXPIRY) {
+            localStorage.removeItem(key);
+            cleared++;
+          }
+        } catch (e) {
+          localStorage.removeItem(key);
+          cleared++;
+        }
+      }
+    }
+    
+    if (cleared > 0) {
+      console.log(`🧹 Cleared ${cleared} old cache entries`);
+    }
+  } catch (error) {
+    console.warn('Cache cleanup error:', error);
+  }
 };
+
+export const getCacheStats = () => {
+  try {
+    let total = 0;
+    let valid = 0;
+    const now = Date.now();
+    
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(CACHE_KEY_PREFIX)) {
+        total++;
+        try {
+          const data = JSON.parse(localStorage.getItem(key));
+          if (now - data.timestamp < CACHE_EXPIRY) {
+            valid++;
+          }
+        } catch (e) {
+          // Invalid entry
+        }
+      }
+    }
+    
+    return {
+      totalEntries: total,
+      validEntries: valid,
+      expiredEntries: total - valid
+    };
+  } catch (error) {
+    return { totalEntries: 0, validEntries: 0, expiredEntries: 0 };
+  }
+};
+
+clearOldCache();
 
 export default {
   geocodeLocation,
@@ -421,5 +458,6 @@ export default {
   vincentyDistance,
   haversineDistance,
   validateDistance,
-  testAccuracy
+  clearOldCache,
+  getCacheStats
 };

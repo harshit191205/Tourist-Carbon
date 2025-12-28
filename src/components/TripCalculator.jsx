@@ -252,7 +252,7 @@ const TripCalculator = ({ onCalculate }) => {
               </div>
             </div>
 
-            <div>
+            {/* <div>
               <label className="block text-sm font-semibold text-slate-300 mb-3">
                 ✈️ How often do you travel?
               </label>
@@ -279,7 +279,7 @@ const TripCalculator = ({ onCalculate }) => {
                   </button>
                 ))}
               </div>
-            </div>
+            </div> */}
 
             <button
               type="button"
