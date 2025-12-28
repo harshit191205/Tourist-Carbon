@@ -4,20 +4,39 @@ import { calculateTravelDistance } from "../utils/distanceCalculator";
 
 const TripCalculator = ({ onCalculate }) => {
   const navigate = useNavigate();
+  const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
+    // Step 1: Basic Trip Info
     origin: "",
     destination: "",
     purpose: "leisure",
+    travelFrequency: "occasional", // New: occasional, regular, frequent
+    
+    // Step 2: Transport Details
     transportMode: "flight",
     distance: "",
     calculatingDistance: false,
     routeInfo: "",
+    cabinClass: "economy", // New: economy, premium_economy, business, first
+    passengers: 1, // New: for car sharing
+    
+    // Step 3: Accommodation
     accommodationType: "hotel",
     nights: "",
+    roomSharing: "alone", // New: alone, sharing
+    
+    // Step 4: Activities & Lifestyle
     sightseeing: 0,
     adventure: 0,
     localtravel: 0,
     events: 0,
+    mealsPerDay: 3, // New
+    dietType: "mixed", // New: vegan, vegetarian, pescatarian, mixed, meat-heavy
+    
+    // Step 5: Personal Preferences
+    sustainabilityImportance: "medium", // New: low, medium, high
+    budgetFlexibility: "medium", // New: low, medium, high
+    comfortLevel: "standard", // New: basic, standard, luxury
   });
 
   const [distanceError, setDistanceError] = useState("");
@@ -25,7 +44,7 @@ const TripCalculator = ({ onCalculate }) => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    const numeric = ["sightseeing", "adventure", "localtravel", "events", "nights"];
+    const numeric = ["sightseeing", "adventure", "localtravel", "events", "nights", "passengers", "mealsPerDay"];
     setFormData((prev) => ({
       ...prev,
       [name]: numeric.includes(name) ? parseInt(value, 10) || 0 : value,
@@ -65,9 +84,7 @@ const TripCalculator = ({ onCalculate }) => {
       setDistanceInfo(`${result.routeType}: ${result.distance} km`);
     } catch (err) {
       console.error(err);
-      setDistanceError(
-        "Could not calculate distance. Please enter distance manually."
-      );
+      setDistanceError("Could not calculate distance. Please enter manually.");
       setFormData((prev) => ({ ...prev, calculatingDistance: false }));
     }
   };
@@ -88,11 +105,14 @@ const TripCalculator = ({ onCalculate }) => {
     const transportData = {
       mode: formData.transportMode,
       distance: parseFloat(formData.distance),
+      cabinClass: formData.cabinClass,
+      passengers: formData.passengers,
     };
 
     const accommodationData = {
       type: formData.accommodationType,
       nights: parseInt(formData.nights, 10),
+      roomSharing: formData.roomSharing,
     };
 
     const activityData = {
@@ -100,106 +120,84 @@ const TripCalculator = ({ onCalculate }) => {
       adventure: formData.adventure,
       localtravel: formData.localtravel,
       events: formData.events,
+      mealsPerDay: formData.mealsPerDay,
+      dietType: formData.dietType,
     };
 
     const tripDetails = {
       origin: formData.origin,
       destination: formData.destination,
       purpose: formData.purpose,
+      travelFrequency: formData.travelFrequency,
+      sustainabilityImportance: formData.sustainabilityImportance,
+      budgetFlexibility: formData.budgetFlexibility,
+      comfortLevel: formData.comfortLevel,
     };
 
     onCalculate(transportData, accommodationData, activityData, tripDetails);
     navigate("/report");
   };
 
-  const transportModes = [
-    { value: "flight", icon: "✈️", label: "Flight", color: "red" },
-    { value: "train", icon: "🚆", label: "Train", color: "emerald" },
-    { value: "bus", icon: "🚌", label: "Bus", color: "blue" },
-    { value: "car", icon: "🚗", label: "Car", color: "slate" },
-    { value: "motorcycle", icon: "🏍️", label: "Motorcycle", color: "orange" },
-    { value: "walk", icon: "🚶", label: "Walk", color: "green" },
-  ];
+  const nextStep = () => {
+    if (step === 1 && (!formData.origin || !formData.destination)) {
+      alert("Please enter origin and destination");
+      return;
+    }
+    if (step === 2 && !formData.distance) {
+      setDistanceError("Please calculate or enter distance");
+      return;
+    }
+    setStep(step + 1);
+  };
 
-  const purposes = [
-    { value: "leisure", icon: "🏖️", label: "Leisure" },
-    { value: "business", icon: "💼", label: "Business" },
-    { value: "education", icon: "🎓", label: "Education" },
-    { value: "family", icon: "👨‍👩‍👧‍👦", label: "Family" },
-  ];
+  const prevStep = () => setStep(step - 1);
 
-  const accommodationTypes = [
-    { value: "hotel", icon: "🏨", label: "Hotel", impact: "High" },
-    { value: "hostel", icon: "🏠", label: "Hostel", impact: "Medium" },
-    { value: "homestay", icon: "🏡", label: "Homestay", impact: "Low" },
-    { value: "ecoresort", icon: "🌿", label: "Eco-resort", impact: "Minimal" },
-  ];
-
-  const activities = [
-    { key: "sightseeing", icon: "🗺️", label: "Sightseeing" },
-    { key: "adventure", icon: "🧗", label: "Adventure" },
-    { key: "localtravel", icon: "🚕", label: "Local Travel" },
-    { key: "events", icon: "🎭", label: "Events" },
-  ];
-
-  const currentTotal = 
-    formData.sightseeing + formData.adventure + formData.localtravel + formData.events;
+  const renderStepIndicator = () => (
+    <div className="flex items-center justify-center mb-8 space-x-2">
+      {[1, 2, 3, 4, 5].map((s) => (
+        <div key={s} className="flex items-center">
+          <div
+            className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${
+              s === step
+                ? "bg-emerald-500 text-white scale-110"
+                : s < step
+                ? "bg-emerald-500/30 text-emerald-300"
+                : "bg-slate-700 text-slate-400"
+            }`}
+          >
+            {s}
+          </div>
+          {s < 5 && (
+            <div
+              className={`w-8 h-1 mx-1 ${
+                s < step ? "bg-emerald-500" : "bg-slate-700"
+              }`}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  );
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[1.5fr,1fr] gap-6 animate-fade-in">
-      {/* Main Form */}
-      <div className="card p-8 space-y-8">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-700/50">
-          <div>
-            <h2 className="text-2xl font-bold gradient-text mb-1">Plan Your Trip</h2>
-            <p className="text-sm text-slate-400">
-              Calculate your journey's environmental impact
-            </p>
-          </div>
-          <span className="badge badge-info">Step 1 of 2</span>
-        </div>
+    <div className="card p-8 animate-fade-in max-w-4xl mx-auto">
+      {renderStepIndicator()}
 
-        <form onSubmit={handleSubmit} className="space-y-8">
-          {/* Transport Mode Selection */}
-          <section>
-            <h3 className="section-label">🚀 Transport Mode</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-              {transportModes.map((mode) => (
-                <button
-                  key={mode.value}
-                  type="button"
-                  onClick={() =>
-                    setFormData({
-                      ...formData,
-                      transportMode: mode.value,
-                      distance: "",
-                      routeInfo: "",
-                    })
-                  }
-                  className={`mode-pill ${
-                    formData.transportMode === mode.value ? "active" : ""
-                  }`}
-                >
-                  <div className="mode-icon">{mode.icon}</div>
-                  <div className={`text-xs font-bold ${
-                    formData.transportMode === mode.value
-                      ? "text-emerald-400"
-                      : "text-slate-400"
-                  }`}>
-                    {mode.label}
-                  </div>
-                </button>
-              ))}
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* STEP 1: Trip Basics */}
+        {step === 1 && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="text-center mb-6">
+              <h2 className="text-3xl font-bold gradient-text mb-2">
+                Tell us about your trip
+              </h2>
+              <p className="text-slate-400">Where are you traveling?</p>
             </div>
-          </section>
 
-          {/* Route Details */}
-          <section className="space-y-4">
-            <h3 className="section-label">📍 Route Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-300 mb-2">
-                  Origin City
+                  📍 From (Origin)
                 </label>
                 <input
                   type="text"
@@ -211,9 +209,10 @@ const TripCalculator = ({ onCalculate }) => {
                   required
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-semibold text-slate-300 mb-2">
-                  Destination City
+                  🎯 To (Destination)
                 </label>
                 <input
                   type="text"
@@ -226,6 +225,168 @@ const TripCalculator = ({ onCalculate }) => {
                 />
               </div>
             </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-300 mb-3">
+                🎒 Trip Purpose
+              </label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { value: "leisure", icon: "🏖️", label: "Leisure" },
+                  { value: "business", icon: "💼", label: "Business" },
+                  { value: "education", icon: "🎓", label: "Education" },
+                  { value: "family", icon: "👨‍👩‍👧", label: "Family" },
+                ].map((purpose) => (
+                  <button
+                    key={purpose.value}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, purpose: purpose.value })}
+                    className={`mode-pill ${
+                      formData.purpose === purpose.value ? "active" : ""
+                    }`}
+                  >
+                    <div className="mode-icon text-3xl">{purpose.icon}</div>
+                    <div className="text-xs font-bold">{purpose.label}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-300 mb-3">
+                ✈️ How often do you travel?
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { value: "occasional", label: "Occasional", desc: "1-2 trips/year" },
+                  { value: "regular", label: "Regular", desc: "3-6 trips/year" },
+                  { value: "frequent", label: "Frequent", desc: "7+ trips/year" },
+                ].map((freq) => (
+                  <button
+                    key={freq.value}
+                    type="button"
+                    onClick={() =>
+                      setFormData({ ...formData, travelFrequency: freq.value })
+                    }
+                    className={`card p-4 text-center cursor-pointer transition-all ${
+                      formData.travelFrequency === freq.value
+                        ? "border-2 border-emerald-500 bg-emerald-500/10"
+                        : "border-2 border-transparent hover:border-slate-600"
+                    }`}
+                  >
+                    <div className="font-semibold text-slate-200">{freq.label}</div>
+                    <div className="text-xs text-slate-400 mt-1">{freq.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={nextStep}
+              className="btn-primary w-full text-lg py-4"
+            >
+              Continue to Transport →
+            </button>
+          </div>
+        )}
+
+        {/* STEP 2: Transport Details */}
+        {step === 2 && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="text-center mb-6">
+              <h2 className="text-3xl font-bold gradient-text mb-2">
+                How will you travel?
+              </h2>
+              <p className="text-slate-400">Choose your mode of transport</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-300 mb-3">
+                🚀 Transport Mode
+              </label>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                {[
+                  { value: "flight", icon: "✈️", label: "Flight" },
+                  { value: "train", icon: "🚆", label: "Train" },
+                  { value: "bus", icon: "🚌", label: "Bus" },
+                  { value: "car", icon: "🚗", label: "Car" },
+                  { value: "motorcycle", icon: "🏍️", label: "Motorcycle" },
+                  { value: "bicycle", icon: "🚴", label: "Bicycle" },
+                ].map((mode) => (
+                  <button
+                    key={mode.value}
+                    type="button"
+                    onClick={() =>
+                      setFormData({
+                        ...formData,
+                        transportMode: mode.value,
+                        distance: "",
+                        routeInfo: "",
+                      })
+                    }
+                    className={`mode-pill ${
+                      formData.transportMode === mode.value ? "active" : ""
+                    }`}
+                  >
+                    <div className="mode-icon">{mode.icon}</div>
+                    <div className="text-xs font-bold">{mode.label}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {formData.transportMode === "flight" && (
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-3">
+                  💺 Cabin Class
+                </label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { value: "economy", label: "Economy", impact: "Lower" },
+                    { value: "premium_economy", label: "Premium", impact: "Medium" },
+                    { value: "business", label: "Business", impact: "High" },
+                    { value: "first", label: "First", impact: "Very High" },
+                  ].map((cabin) => (
+                    <button
+                      key={cabin.value}
+                      type="button"
+                      onClick={() =>
+                        setFormData({ ...formData, cabinClass: cabin.value })
+                      }
+                      className={`card p-4 text-center cursor-pointer ${
+                        formData.cabinClass === cabin.value
+                          ? "border-2 border-emerald-500 bg-emerald-500/10"
+                          : "border-2 border-transparent hover:border-slate-600"
+                      }`}
+                    >
+                      <div className="font-semibold text-slate-200">{cabin.label}</div>
+                      <div className="text-xs text-slate-400 mt-1">{cabin.impact}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {formData.transportMode === "car" && (
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                  👥 Number of Passengers (including you)
+                </label>
+                <input
+                  type="number"
+                  name="passengers"
+                  value={formData.passengers}
+                  onChange={handleChange}
+                  min="1"
+                  max="8"
+                  className="input-base"
+                />
+                <p className="text-xs text-slate-400 mt-2">
+                  💡 More passengers = lower emissions per person
+                </p>
+              </div>
+            )}
 
             <button
               type="button"
@@ -252,10 +413,7 @@ const TripCalculator = ({ onCalculate }) => {
 
             <div>
               <label className="block text-sm font-semibold text-slate-300 mb-2">
-                Distance (km)
-                {formData.distance && (
-                  <span className="ml-2 text-emerald-400 text-xs">✓ Calculated</span>
-                )}
+                📏 Distance (km)
               </label>
               <input
                 type="number"
@@ -270,105 +428,153 @@ const TripCalculator = ({ onCalculate }) => {
               />
               {distanceInfo && (
                 <div className="mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
-                  <p className="text-sm font-medium text-emerald-300">
-                    ✓ {distanceInfo}
-                  </p>
+                  <p className="text-sm font-medium text-emerald-300">✓ {distanceInfo}</p>
                 </div>
               )}
               {distanceError && (
                 <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
-                  <p className="text-sm font-medium text-red-300">
-                    ⚠️ {distanceError}
-                  </p>
+                  <p className="text-sm font-medium text-red-300">⚠️ {distanceError}</p>
                 </div>
               )}
             </div>
 
-            {/* Purpose Pills */}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={prevStep}
+                className="btn-secondary flex-1 py-4"
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                onClick={nextStep}
+                className="btn-primary flex-1 py-4"
+              >
+                Continue to Accommodation →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 3: Accommodation */}
+        {step === 3 && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="text-center mb-6">
+              <h2 className="text-3xl font-bold gradient-text mb-2">
+                Where will you stay?
+              </h2>
+              <p className="text-slate-400">Tell us about your accommodation</p>
+            </div>
+
             <div>
               <label className="block text-sm font-semibold text-slate-300 mb-3">
-                Trip Purpose
+                🏨 Accommodation Type
               </label>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {purposes.map((purpose) => (
+                {[
+                  { value: "hotel", icon: "🏨", label: "Hotel", impact: "Medium" },
+                  { value: "hostel", icon: "🏠", label: "Hostel", impact: "Low" },
+                  { value: "homestay", icon: "🏡", label: "Homestay", impact: "Low" },
+                  { value: "ecoresort", icon: "🌿", label: "Eco-Resort", impact: "Minimal" },
+                ].map((acc) => (
                   <button
-                    key={purpose.value}
+                    key={acc.value}
                     type="button"
-                    onClick={() => setFormData({ ...formData, purpose: purpose.value })}
+                    onClick={() =>
+                      setFormData({ ...formData, accommodationType: acc.value })
+                    }
                     className={`mode-pill ${
-                      formData.purpose === purpose.value ? "active" : ""
+                      formData.accommodationType === acc.value ? "active" : ""
                     }`}
                   >
-                    <div className="mode-icon text-3xl">{purpose.icon}</div>
-                    <div className={`text-xs font-bold ${
-                      formData.purpose === purpose.value
-                        ? "text-emerald-400"
-                        : "text-slate-400"
-                    }`}>
-                      {purpose.label}
+                    <div className="mode-icon">{acc.icon}</div>
+                    <div className="text-xs font-bold">{acc.label}</div>
+                    <div
+                      className={`text-[10px] mt-1 ${
+                        acc.impact === "Minimal"
+                          ? "text-emerald-400"
+                          : acc.impact === "Low"
+                          ? "text-blue-400"
+                          : "text-amber-400"
+                      }`}
+                    >
+                      {acc.impact}
                     </div>
                   </button>
                 ))}
               </div>
             </div>
-          </section>
 
-          {/* Accommodation */}
-          <section className="space-y-4">
-            <h3 className="section-label">🏨 Accommodation</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {accommodationTypes.map((type) => (
-                <button
-                  key={type.value}
-                  type="button"
-                  onClick={() =>
-                    setFormData({ ...formData, accommodationType: type.value })
-                  }
-                  className={`mode-pill ${
-                    formData.accommodationType === type.value ? "active" : ""
-                  }`}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                  🌙 Number of Nights
+                </label>
+                <input
+                  type="number"
+                  name="nights"
+                  value={formData.nights}
+                  onChange={handleChange}
+                  min="1"
+                  placeholder="e.g., 3"
+                  className="input-base"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                  👥 Room Arrangement
+                </label>
+                <select
+                  name="roomSharing"
+                  value={formData.roomSharing}
+                  onChange={handleChange}
+                  className="input-base"
                 >
-                  <div className="mode-icon">{type.icon}</div>
-                  <div className={`text-xs font-bold ${
-                    formData.accommodationType === type.value
-                      ? "text-emerald-400"
-                      : "text-slate-400"
-                  }`}>
-                    {type.label}
-                  </div>
-                  <div className={`text-[10px] font-medium mt-1 ${
-                    type.impact === "Minimal" ? "text-emerald-400" :
-                    type.impact === "Low" ? "text-blue-400" :
-                    type.impact === "Medium" ? "text-amber-400" : "text-red-400"
-                  }`}>
-                    {type.impact} Impact
-                  </div>
-                </button>
-              ))}
+                  <option value="alone">Solo Room</option>
+                  <option value="sharing">Sharing Room</option>
+                </select>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-300 mb-2">
-                Number of Nights
-              </label>
-              <input
-                type="number"
-                name="nights"
-                value={formData.nights}
-                onChange={handleChange}
-                min="1"
-                placeholder="e.g., 3"
-                className="input-base"
-                required
-              />
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={prevStep}
+                className="btn-secondary flex-1 py-4"
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                onClick={nextStep}
+                className="btn-primary flex-1 py-4"
+              >
+                Continue to Activities →
+              </button>
             </div>
-          </section>
+          </div>
+        )}
 
-          {/* Activities */}
-          <section className="space-y-4">
-            <h3 className="section-label">🎯 Activities (Optional)</h3>
+        {/* STEP 4: Activities & Lifestyle */}
+        {step === 4 && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="text-center mb-6">
+              <h2 className="text-3xl font-bold gradient-text mb-2">
+                What will you do?
+              </h2>
+              <p className="text-slate-400">Activities and daily habits</p>
+            </div>
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {activities.map((activity) => (
+              {[
+                { key: "sightseeing", icon: "🗺️", label: "Sightseeing" },
+                { key: "adventure", icon: "🧗", label: "Adventure" },
+                { key: "localtravel", icon: "🚕", label: "Local Travel" },
+                { key: "events", icon: "🎭", label: "Events" },
+              ].map((activity) => (
                 <div key={activity.key}>
                   <label className="block text-sm font-semibold text-slate-300 mb-2 flex items-center gap-2">
                     <span>{activity.icon}</span>
@@ -386,64 +592,157 @@ const TripCalculator = ({ onCalculate }) => {
                 </div>
               ))}
             </div>
-          </section>
 
-          {/* Submit Button */}
-          <button type="submit" className="btn-primary w-full text-base py-4">
-            <span className="text-xl">🌍</span>
-            Generate Carbon Footprint Report
-          </button>
-        </form>
-      </div>
-
-      {/* Summary Panel */}
-      <div className="space-y-6">
-        <div className="card p-6 sticky top-24">
-          <h3 className="section-label">📊 Trip Summary</h3>
-          
-          <div className="space-y-4">
-            <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
-              <p className="text-xs font-semibold text-slate-400 mb-2">Route</p>
-              <p className="text-sm font-bold text-slate-200">
-                {formData.origin && formData.destination
-                  ? `${formData.origin} → ${formData.destination}`
-                  : "Not set"}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="stat-card">
-                <div className="stat-value">{formData.transportMode.toUpperCase()}</div>
-                <div className="stat-label">Transport</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-value">
-                  {formData.distance ? `${formData.distance} km` : "—"}
-                </div>
-                <div className="stat-label">Distance</div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-300 mb-3">
+                🍽️ Typical Diet
+              </label>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {[
+                  { value: "vegan", label: "Vegan", icon: "🥗", impact: "Lowest" },
+                  { value: "vegetarian", label: "Vegetarian", icon: "🥕", impact: "Low" },
+                  { value: "pescatarian", label: "Pescatarian", icon: "🐟", impact: "Medium" },
+                  { value: "mixed", label: "Mixed", icon: "🍱", impact: "Medium" },
+                  { value: "meat-heavy", label: "Meat-Heavy", icon: "🥩", impact: "High" },
+                ].map((diet) => (
+                  <button
+                    key={diet.value}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, dietType: diet.value })}
+                    className={`card p-3 text-center cursor-pointer ${
+                      formData.dietType === diet.value
+                        ? "border-2 border-emerald-500 bg-emerald-500/10"
+                        : "border-2 border-transparent hover:border-slate-600"
+                    }`}
+                  >
+                    <div className="text-2xl mb-1">{diet.icon}</div>
+                    <div className="text-xs font-semibold text-slate-200">
+                      {diet.label}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1">{diet.impact}</div>
+                  </button>
+                ))}
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="stat-card">
-                <div className="stat-value">{formData.nights || 0}</div>
-                <div className="stat-label">Nights</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-value">{currentTotal}</div>
-                <div className="stat-label">Activities</div>
-              </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-300 mb-2">
+                🍽️ Meals per day
+              </label>
+              <input
+                type="number"
+                name="mealsPerDay"
+                value={formData.mealsPerDay}
+                onChange={handleChange}
+                min="1"
+                max="5"
+                className="input-base"
+              />
             </div>
 
-            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
-              <p className="text-xs font-semibold text-emerald-400 mb-1">💡 Tip</p>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Choose trains and eco-resorts to minimize your carbon footprint
-              </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={prevStep}
+                className="btn-secondary flex-1 py-4"
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                onClick={nextStep}
+                className="btn-primary flex-1 py-4"
+              >
+                Continue to Preferences →
+              </button>
             </div>
           </div>
-        </div>
-      </div>
+        )}
+
+        {/* STEP 5: Personal Preferences */}
+        {step === 5 && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="text-center mb-6">
+              <h2 className="text-3xl font-bold gradient-text mb-2">
+                Final touches
+              </h2>
+              <p className="text-slate-400">Your travel preferences</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-300 mb-3">
+                🌱 Sustainability Importance
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { value: "low", label: "Low Priority", desc: "Convenience first" },
+                  { value: "medium", label: "Important", desc: "Balance both" },
+                  { value: "high", label: "Very Important", desc: "Eco-conscious" },
+                ].map((sus) => (
+                  <button
+                    key={sus.value}
+                    type="button"
+                    onClick={() =>
+                      setFormData({ ...formData, sustainabilityImportance: sus.value })
+                    }
+                    className={`card p-4 text-center cursor-pointer ${
+                      formData.sustainabilityImportance === sus.value
+                        ? "border-2 border-emerald-500 bg-emerald-500/10"
+                        : "border-2 border-transparent hover:border-slate-600"
+                    }`}
+                  >
+                    <div className="font-semibold text-slate-200">{sus.label}</div>
+                    <div className="text-xs text-slate-400 mt-1">{sus.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-300 mb-3">
+                💰 Budget Flexibility
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { value: "low", label: "Limited", desc: "Budget travel" },
+                  { value: "medium", label: "Moderate", desc: "Standard options" },
+                  { value: "high", label: "Flexible", desc: "Premium options" },
+                ].map((budget) => (
+                  <button
+                    key={budget.value}
+                    type="button"
+                    onClick={() =>
+                      setFormData({ ...formData, budgetFlexibility: budget.value })
+                    }
+                    className={`card p-4 text-center cursor-pointer ${
+                      formData.budgetFlexibility === budget.value
+                        ? "border-2 border-emerald-500 bg-emerald-500/10"
+                        : "border-2 border-transparent hover:border-slate-600"
+                    }`}
+                  >
+                    <div className="font-semibold text-slate-200">{budget.label}</div>
+                    <div className="text-xs text-slate-400 mt-1">{budget.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={prevStep}
+                className="btn-secondary flex-1 py-4"
+              >
+                ← Back
+              </button>
+              <button type="submit" className="btn-primary flex-1 py-4 text-lg">
+                <span className="text-xl">🌍</span>
+                Generate My Carbon Report
+              </button>
+            </div>
+          </div>
+        )}
+      </form>
     </div>
   );
 };
