@@ -1,22 +1,46 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import TripCalculator from './components/TripCalculator';
 import SimplifiedReportPage from './components/SimplifiedReportPage';
+import TripHistory from './components/TripHistory';
+import Login from './components/Login';
 import carbonCalculator from './utils/carbonCalculator';
+import { saveTrip } from './services/firebaseService';
 import './App.css';
 
 const { calculateTotalEmissions } = carbonCalculator;
 
-function App() {
+// Protected Route Component
+function ProtectedRoute({ children }) {
+  const { currentUser } = useAuth();
+  
+  if (!currentUser) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return children;
+}
+
+function AppContent() {
+  const { currentUser, logout } = useAuth();
+  const navigate = useNavigate();
   const [emissions, setEmissions] = useState(null);
   const [tripData, setTripData] = useState(null);
 
-  const handleCalculate = (transportData, accommodationData, activityData, tripDetails) => {
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/login');
+      alert('Logged out successfully!');
+    } catch (error) {
+      console.error('Logout error:', error);
+      alert('Failed to logout');
+    }
+  };
+
+  const handleCalculate = async (transportData, accommodationData, activityData, tripDetails) => {
     console.log('🧮 Calculating emissions...');
-    console.log('Transport:', transportData);
-    console.log('Accommodation:', accommodationData);
-    console.log('Activities:', activityData);
-    console.log('Trip Details:', tripDetails);
 
     try {
       const result = calculateTotalEmissions(
@@ -35,6 +59,24 @@ function App() {
         activityData,
         tripDetails
       });
+
+      // Save to Firebase
+      if (currentUser) {
+        console.log('💾 Saving trip to Firebase...');
+        const saveResult = await saveTrip(
+          currentUser.uid,
+          { transportData, accommodationData, activityData, tripDetails },
+          result
+        );
+        
+        if (saveResult.success) {
+          console.log('✅ Trip saved to Firebase with ID:', saveResult.id);
+          alert('✅ Trip saved successfully!');
+        } else {
+          console.error('❌ Failed to save trip:', saveResult.error);
+          alert(`⚠️ Failed to save trip: ${saveResult.error}`);
+        }
+      }
     } catch (error) {
       console.error('❌ Calculation error:', error);
       alert('Error calculating emissions. Please check your inputs and try again.');
@@ -42,8 +84,9 @@ function App() {
   };
 
   return (
-    <Router>
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+      {/* Header - Only show when user is logged in */}
+      {currentUser && (
         <header className="bg-slate-900/50 backdrop-blur-sm border-b border-slate-700 sticky top-0 z-50">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
@@ -59,31 +102,52 @@ function App() {
                 </div>
               </div>
               
-              <nav className="hidden md:flex gap-4">
-                {/* <a 
-                  href="/" 
-                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all"
+              <nav className="flex gap-3 items-center">
+                <span className="text-slate-400 text-sm hidden md:block">
+                  👤 {currentUser.email}
+                </span>
+                <button
+                  onClick={() => navigate('/')}
+                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all text-sm font-semibold"
                 >
-                  🏠 Home
-                </a> */}
+                  🏠 Dashboard
+                </button>
+                <button
+                  onClick={() => navigate('/history')}
+                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-all text-sm font-semibold"
+                >
+                  📊 Trip History
+                </button>
                 {emissions && (
-                  <a 
-                    href="/report" 
-                    className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-all"
+                  <button
+                    onClick={() => navigate('/report')}
+                    className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-all text-sm font-semibold"
                   >
-                    📊 New Report
-                  </a>
+                    📄 View Report
+                  </button>
                 )}
+                <button
+                  onClick={handleLogout}
+                  className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-all text-sm font-semibold"
+                >
+                  🚪 Logout
+                </button>
               </nav>
             </div>
           </div>
         </header>
+      )}
 
-        <main className="container mx-auto px-4 py-8">
-          <Routes>
-            <Route
-              path="/"
-              element={
+      <main className="container mx-auto px-4 py-8">
+        <Routes>
+          {/* Login Route - Public */}
+          <Route path="/login" element={<Login />} />
+          
+          {/* Dashboard Route - Protected */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
                 <div className="max-w-5xl mx-auto">
                   <div className="text-center mb-12">
                     <h2 className="text-5xl font-bold gradient-text mb-4">
@@ -93,6 +157,13 @@ function App() {
                       Make informed, sustainable travel choices. Get accurate calculations
                       based on standard emission factors and transparent formulas.
                     </p>
+                    
+                    {/* Welcome Message */}
+                    <div className="mt-6 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg max-w-2xl mx-auto">
+                      <p className="text-emerald-300 text-sm">
+                        🎉 Welcome back! Your trips will be automatically saved to your account.
+                      </p>
+                    </div>
                   </div>
 
                   <TripCalculator onCalculate={handleCalculate} />
@@ -172,26 +243,48 @@ function App() {
                     </div>
                   </div>
                 </div>
-              }
-            />
+              </ProtectedRoute>
+            }
+          />
 
-            <Route
-              path="/report"
-              element={
-                emissions && tripData ? (
+          {/* Trip History Route - Protected */}
+          <Route
+            path="/history"
+            element={
+              <ProtectedRoute>
+                <TripHistory />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Report Route - Protected */}
+          <Route
+            path="/report"
+            element={
+              <ProtectedRoute>
+                {emissions && tripData ? (
                   <div className="max-w-6xl mx-auto">
                     <SimplifiedReportPage emissions={emissions} tripData={tripData} />
                   </div>
                 ) : (
                   <Navigate to="/" replace />
-                )
-              }
-            />
+                )}
+              </ProtectedRoute>
+            }
+          />
 
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </main>
+          {/* Catch All - Redirect to login if not authenticated, else dashboard */}
+          <Route 
+            path="*" 
+            element={
+              currentUser ? <Navigate to="/" replace /> : <Navigate to="/login" replace />
+            } 
+          />
+        </Routes>
+      </main>
 
+      {/* Footer - Only show when logged in */}
+      {currentUser && (
         <footer className="bg-slate-900/50 backdrop-blur-sm border-t border-slate-700 mt-20">
           <div className="container mx-auto px-4 py-8">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -222,14 +315,24 @@ function App() {
                   promoting sustainable travel and climate awareness.
                 </p>
                 <p className="text-xs text-slate-500 mt-4">
-                  © 2025 Tourist Carbon Project
+                  © 2026 Tourist Carbon Project - Powered by Firebase
                 </p>
               </div>
             </div>
           </div>
         </footer>
-      </div>
-    </Router>
+      )}
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <AppContent />
+      </Router>
+    </AuthProvider>
   );
 }
 
