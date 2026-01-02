@@ -205,7 +205,7 @@ const GroupTripsList = () => {
       </div>
 
       {/* Debug Info */}
-      {debugInfo && (
+      {/* {debugInfo && (
         <div className="card p-4 mb-6 bg-blue-500/10 border border-blue-500/30">
           <div className="text-sm text-slate-300">
             <strong>🔍 Debug Info:</strong>
@@ -216,7 +216,7 @@ const GroupTripsList = () => {
             </ul>
           </div>
         </div>
-      )}
+      )} */}
 
       {/* Action Bar */}
       <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-8">
