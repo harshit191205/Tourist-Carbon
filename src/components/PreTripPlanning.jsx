@@ -1,12 +1,7 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
 import { calculateModeSpecificDistances } from '../utils/distanceCalculator';
 
 const PreTripPlanning = () => {
-  const { currentUser } = useAuth();
-  const navigate = useNavigate();
-  
   const [tripDetails, setTripDetails] = useState({
     origin: '',
     destination: '',
@@ -63,7 +58,6 @@ const PreTripPlanning = () => {
     nights: 0
   });
 
-  const [selectedScenario, setSelectedScenario] = useState(null);
   const [showComparison, setShowComparison] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -221,20 +215,12 @@ const PreTripPlanning = () => {
     return sorted[0];
   };
 
-  const handleSaveAndProceed = (scenario) => {
-    setSelectedScenario(scenario);
-    alert(`✅ Selected ${scenario.name} with ${getTotalEmissions(scenario).toFixed(2)} kg CO₂`);
-  };
-
   return (
     <div className="max-w-7xl mx-auto">
       <div className="text-center mb-8">
         <h1 className="text-5xl font-bold gradient-text mb-4">
            Pre-Trip Carbon Planning
         </h1>
-        {/* <p className="text-xl text-slate-300 max-w-3xl mx-auto">
-          Plan your trip using TomTom API for accurate route distances
-        </p> */}
       </div>
 
       <div className="card p-8 mt-8 mb-8">
@@ -342,12 +328,6 @@ const PreTripPlanning = () => {
                     </p>
                   </div>
                 </div>
-                {/* <button
-                  onClick={() => handleSaveAndProceed(getRecommendation())}
-                  className="px-6 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all"
-                >
-                  Choose This Option
-                </button> */}
               </div>
             </div>
           )}
@@ -387,13 +367,6 @@ const PreTripPlanning = () => {
                     <div className="text-lg font-bold text-emerald-400">{getTotalEmissions(scenario).toFixed(2)} kg</div>
                   </div>
                 </div>
-
-                {/* <button
-                  onClick={() => handleSaveAndProceed(scenario)}
-                  className="mt-4 w-full px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-all"
-                >
-                  Select & Continue
-                </button> */}
               </div>
             ))}
           </div>
