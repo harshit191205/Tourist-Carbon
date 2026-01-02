@@ -10,7 +10,6 @@ const GroupTripsList = () => {
   const [groupTrips, setGroupTrips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
-  const [debugInfo, setDebugInfo] = useState(null);
 
   const fetchGroupTrips = useCallback(async () => {
     if (!currentUser) {
@@ -37,19 +36,25 @@ const GroupTripsList = () => {
       // Log and filter trips
       allSnapshot.forEach((doc) => {
         const data = doc.data();
-        const isMember = data.members?.includes(currentUser.uid);
+        
+        // ✅ CHECK BOTH UID AND EMAIL
+        const isMemberByUid = data.members?.includes(currentUser.uid);
+        const isMemberByEmail = data.memberEmails?.includes(currentUser.email?.toLowerCase());
         const isCreator = data.createdBy === currentUser.uid;
         
         console.log('Trip:', doc.id, {
           name: data.tripName,
           members: data.members,
-          createdBy: data.createdBy,
-          isMember,
+          memberEmails: data.memberEmails,
+          currentUserUid: currentUser.uid,
+          currentUserEmail: currentUser.email,
+          isMemberByUid,
+          isMemberByEmail,
           isCreator
         });
         
-        // Include trip if user is member OR creator (this fixes old trips)
-        if (isMember || isCreator) {
+        // ✅ Include trip if user is member by UID OR email, OR creator
+        if (isMemberByUid || isMemberByEmail || isCreator) {
           userTripsCount++;
           trips.push({
             id: doc.id,
@@ -79,13 +84,6 @@ const GroupTripsList = () => {
       }
 
       console.log('📦 Final filtered trips:', filteredTrips);
-      
-      // Set debug info
-      setDebugInfo({
-        totalInDb: allSnapshot.size,
-        userTrips: userTripsCount,
-        userId: currentUser.uid
-      });
 
       setGroupTrips(filteredTrips);
     } catch (error) {
@@ -203,20 +201,6 @@ const GroupTripsList = () => {
           Plan and track trips with your friends and family
         </p>
       </div>
-
-      {/* Debug Info */}
-      {/* {debugInfo && (
-        <div className="card p-4 mb-6 bg-blue-500/10 border border-blue-500/30">
-          <div className="text-sm text-slate-300">
-            <strong>🔍 Debug Info:</strong>
-            <ul className="mt-2 space-y-1 text-xs">
-              <li>• Your User ID: <code className="text-blue-400">{debugInfo.userId}</code></li>
-              <li>• Total trips in database: <strong className="text-emerald-400">{debugInfo.totalInDb}</strong></li>
-              <li>• Your trips (member or creator): <strong className="text-amber-400">{debugInfo.userTrips}</strong></li>
-            </ul>
-          </div>
-        </div>
-      )} */}
 
       {/* Action Bar */}
       <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-8">
