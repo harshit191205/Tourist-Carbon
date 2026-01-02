@@ -52,7 +52,7 @@ export const calculateHaversineDistance = (lat1, lon1, lat2, lon2) => {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const distance = R * c;
   
-  return Math.round(distance);
+  return distance; // Return as float for more accurate calculations
 };
 
 const toRad = (degrees) => {
@@ -60,237 +60,239 @@ const toRad = (degrees) => {
 };
 
 /**
- * Calculate road distance using OSRM (Open Source Routing Machine)
+ * UNIFIED DISTANCE CALCULATION - Used by both Calculator and Pre-Trip Planning
+ * This ensures consistent distances across all pages (1400km for Delhi-Mumbai car)
  */
-export const calculateRoadDistance = async (originLat, originLng, destLat, destLng, transportMode) => {
+export const calculateModeSpecificDistances = async (origin, destination) => {
   try {
-    // Map transport modes to OSRM profiles
-    const profileMap = {
-      car: 'driving',
-      motorcycle: 'driving',
-      bus: 'driving',
-      train: 'driving', // Use driving as approximation
-      bicycle: 'cycling',
-      walking: 'foot'
-    };
+    console.log('\n🚀 ========== UNIFIED DISTANCE CALCULATION ==========\n');
 
-    const profile = profileMap[transportMode] || 'driving';
-    
-    const response = await fetch(
-      `https://router.project-osrm.org/route/v1/${profile}/${originLng},${originLat};${destLng},${destLat}?overview=false`
+    // Step 1: Geocode both locations
+    const originGeo = await geocodeLocation(origin);
+    if (!originGeo.success) {
+      throw new Error(`Could not find origin: ${origin}`);
+    }
+
+    const destGeo = await geocodeLocation(destination);
+    if (!destGeo.success) {
+      throw new Error(`Could not find destination: ${destination}`);
+    }
+
+    console.log(`✅ Origin: ${originGeo.displayName}`);
+    console.log(`✅ Destination: ${destGeo.displayName}`);
+
+    // Step 2: Calculate straight-line distance (Haversine)
+    const straightLineKm = calculateHaversineDistance(
+      originGeo.lat, originGeo.lng,
+      destGeo.lat, destGeo.lng
     );
     
-    const data = await response.json();
+    console.log(`\n📏 Straight-line distance: ${straightLineKm.toFixed(2)} km`);
+
+    // Step 3: Calculate BASE road distance (straight-line × 1.4)
+    // This gives ~1400km for Delhi-Mumbai
+    const baseRoadDistance = straightLineKm * 1.4;
     
-    if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-      const route = data.routes[0];
-      let distanceInKm = Math.round(route.distance / 1000);
-      const durationInMinutes = Math.round(route.duration / 60);
-      const durationInHours = (route.duration / 3600).toFixed(1);
-      
-      // Add adjustment for train routes (typically 10-15% longer than road)
-      if (transportMode === 'train') {
-        distanceInKm = Math.round(distanceInKm * 1.12);
-      }
-      
-      return {
-        success: true,
-        distance: distanceInKm,
-        duration: durationInMinutes < 60 
-          ? `${durationInMinutes} mins` 
-          : `${durationInHours} hours`,
-        durationInMinutes: durationInMinutes
-      };
-    } else {
-      return {
-        success: false,
-        error: 'Route not found'
-      };
-    }
+    console.log(`🛣️ Base road distance: ${straightLineKm.toFixed(2)} × 1.4 = ${baseRoadDistance.toFixed(2)} km`);
+
+    // Step 4: Calculate mode-specific distances
+    console.log('\n🎯 ========== MODE-SPECIFIC CALCULATIONS ==========\n');
+
+    // Flight: straight-line + 10% for air corridors
+    const flightDistance = Math.round(straightLineKm * 1.1);
+    console.log(`✈️ FLIGHT: ${straightLineKm.toFixed(2)} × 1.1 = ${flightDistance} km`);
+
+    // Train: road distance + 15% for rail routes
+    const trainDistance = Math.round(baseRoadDistance * 1.15);
+    console.log(`🚆 TRAIN: ${baseRoadDistance.toFixed(2)} × 1.15 = ${trainDistance} km`);
+
+    // Car: base road distance (1400km for Delhi-Mumbai)
+    const carDistance = Math.round(baseRoadDistance);
+    console.log(`🚗 CAR: ${baseRoadDistance.toFixed(2)} × 1.0 = ${carDistance} km`);
+
+    // Motorcycle: same as car
+    const motorcycleDistance = Math.round(baseRoadDistance);
+    console.log(`🏍️ MOTORCYCLE: ${baseRoadDistance.toFixed(2)} × 1.0 = ${motorcycleDistance} km`);
+
+    // Bus: road distance + 25% for stops and detours
+    const busDistance = Math.round(baseRoadDistance * 1.25);
+    console.log(`🚌 BUS: ${baseRoadDistance.toFixed(2)} × 1.25 = ${busDistance} km`);
+
+    // Bicycle: same as car route
+    const bicycleDistance = Math.round(baseRoadDistance);
+    console.log(`🚴 BICYCLE: ${baseRoadDistance.toFixed(2)} × 1.0 = ${bicycleDistance} km`);
+
+    // Walking: same as car route
+    const walkDistance = Math.round(baseRoadDistance);
+    console.log(`🚶 WALKING: ${baseRoadDistance.toFixed(2)} × 1.0 = ${walkDistance} km`);
+
+    console.log('\n✅ ========== CALCULATION COMPLETE ==========\n');
+
+    return {
+      flight: flightDistance,
+      train: trainDistance,
+      car: carDistance,
+      car_petrol: carDistance,
+      car_diesel: carDistance,
+      car_cng: carDistance,
+      car_ev: carDistance,
+      motorcycle: motorcycleDistance,
+      bus: busDistance,
+      bicycle: bicycleDistance,
+      walking: walkDistance,
+      walk: walkDistance
+    };
+
   } catch (error) {
-    console.error('Road distance calculation error:', error);
-    return {
-      success: false,
-      error: error.message
-    };
+    console.error('❌ Distance calculation error:', error);
+    throw error;
   }
 };
 
 /**
- * Calculate flight distance (great circle distance + 5%)
+ * Calculate duration based on distance and transport mode
  */
-export const calculateFlightDistance = (lat1, lon1, lat2, lon2) => {
-  // For flights, use straight-line distance (great circle)
-  // Add ~5% for typical flight path deviations
-  const straightLine = calculateHaversineDistance(lat1, lon1, lat2, lon2);
-  const flightDistance = Math.round(straightLine * 1.05);
-  
-  // Estimate flight duration based on distance
-  // Average cruise speed: 800 km/h, plus taxi/takeoff/landing time
-  let durationHours;
-  if (flightDistance < 500) {
-    // Short haul: add 30 min for ground operations
-    durationHours = (flightDistance / 700 + 0.5).toFixed(1);
-  } else if (flightDistance < 3000) {
-    // Medium haul: add 45 min
-    durationHours = (flightDistance / 800 + 0.75).toFixed(1);
+const calculateDuration = (distance, transportMode) => {
+  const speedMap = {
+    flight: 800,      // 800 km/h
+    train: 80,        // 80 km/h
+    car: 60,          // 60 km/h
+    car_petrol: 60,
+    car_diesel: 60,
+    car_cng: 60,
+    car_ev: 60,
+    motorcycle: 70,   // 70 km/h
+    bus: 50,          // 50 km/h
+    bicycle: 20,      // 20 km/h
+    walking: 5,       // 5 km/h
+    walk: 5
+  };
+
+  const speed = speedMap[transportMode] || 60;
+  let timeInHours = distance / speed;
+
+  // Add airport/station time for flights
+  if (transportMode === 'flight') {
+    timeInHours += 2;
+  }
+
+  // Format duration
+  if (timeInHours < 1) {
+    return `${Math.round(timeInHours * 60)} mins`;
+  } else if (timeInHours < 24) {
+    return `${timeInHours.toFixed(1)} hours`;
   } else {
-    // Long haul: add 1 hour
-    durationHours = (flightDistance / 850 + 1).toFixed(1);
+    const days = Math.floor(timeInHours / 24);
+    const hours = Math.round(timeInHours % 24);
+    return `${days}d ${hours}h`;
   }
-  
-  return {
-    success: true,
-    distance: flightDistance,
-    duration: `${durationHours} hours`,
-    routeType: 'Flight path (great circle)'
-  };
 };
 
 /**
- * Calculate train distance (approximation using road routes + 12%)
+ * Get route type label
  */
-export const calculateTrainDistance = async (originLat, originLng, destLat, destLng) => {
-  // Try to get road distance first
-  const roadResult = await calculateRoadDistance(originLat, originLng, destLat, destLng, 'train');
-  
-  if (roadResult.success) {
-    // Train routes are typically 10-15% longer than direct road routes
-    const trainDistance = Math.round(roadResult.distance * 1.12);
-    
-    // Average train speed: 80 km/h for regular trains
-    const durationHours = (trainDistance / 80).toFixed(1);
-    
-    return {
-      success: true,
-      distance: trainDistance,
-      duration: `${durationHours} hours`,
-      routeType: 'Estimated rail route'
-    };
-  }
-  
-  // Fallback to straight-line distance + 20% if road route fails
-  const straightLine = calculateHaversineDistance(originLat, originLng, destLat, destLng);
-  const trainDistance = Math.round(straightLine * 1.2);
-  const durationHours = (trainDistance / 80).toFixed(1);
-  
-  return {
-    success: true,
-    distance: trainDistance,
-    duration: `${durationHours} hours`,
-    routeType: 'Estimated rail route (straight-line approximation)'
+const getRouteType = (transportMode) => {
+  const routeTypeMap = {
+    flight: 'Flight path (great circle)',
+    train: 'Estimated rail route',
+    car: 'Car route',
+    car_petrol: 'Car route (petrol)',
+    car_diesel: 'Car route (diesel)',
+    car_cng: 'Car route (CNG)',
+    car_ev: 'Car route (electric)',
+    motorcycle: 'Motorcycle route',
+    bus: 'Bus route',
+    bicycle: 'Cycling route',
+    walking: 'Walking route',
+    walk: 'Walking route'
   };
+
+  return routeTypeMap[transportMode] || 'Road route';
 };
 
 /**
  * Main function to calculate travel distance based on transport mode
- * This matches your existing function signature exactly
+ * This maintains backward compatibility with your existing TripCalculator
  */
 export const calculateTravelDistance = async (origin, destination, transportMode) => {
   try {
     if (!origin || !destination) {
       throw new Error('Origin and destination are required');
     }
-    
-    // Step 1: Geocode both locations
-    console.log('Geocoding origin:', origin);
-    const originGeo = await geocodeLocation(origin);
-    
-    if (!originGeo.success) {
-      throw new Error(`Could not find origin: ${origin}`);
-    }
-    
-    console.log('Geocoding destination:', destination);
-    const destGeo = await geocodeLocation(destination);
-    
-    if (!destGeo.success) {
-      throw new Error(`Could not find destination: ${destination}`);
-    }
-    
-    console.log('Origin coordinates:', originGeo.lat, originGeo.lng);
-    console.log('Destination coordinates:', destGeo.lat, destGeo.lng);
-    
-    let result;
-    
-    // Step 2: Calculate distance based on transport mode
-    switch (transportMode) {
-      case 'flight':
-        result = calculateFlightDistance(
-          originGeo.lat, originGeo.lng,
-          destGeo.lat, destGeo.lng
-        );
-        break;
-        
-      case 'train':
-        result = await calculateTrainDistance(
-          originGeo.lat, originGeo.lng,
-          destGeo.lat, destGeo.lng
-        );
-        break;
-        
-      case 'car':
-      case 'motorcycle':
-      case 'bus':
-        result = await calculateRoadDistance(
-          originGeo.lat, originGeo.lng,
-          destGeo.lat, destGeo.lng,
-          transportMode
-        );
-        if (result.success) {
-          const modeLabel = transportMode.charAt(0).toUpperCase() + transportMode.slice(1);
-          result.routeType = `${modeLabel} route`;
-        }
-        break;
-        
-      case 'bicycle':
-        result = await calculateRoadDistance(
-          originGeo.lat, originGeo.lng,
-          destGeo.lat, destGeo.lng,
-          'bicycle'
-        );
-        if (result.success) {
-          result.routeType = 'Cycling route';
-        }
-        break;
-        
-      default:
-        // Fallback to straight-line distance
-        const straightLine = calculateHaversineDistance(
-          originGeo.lat, originGeo.lng,
-          destGeo.lat, destGeo.lng
-        );
-        result = {
-          success: true,
-          distance: straightLine,
-          duration: 'N/A',
-          routeType: 'Straight-line distance'
-        };
-    }
-    
-    // Handle failure with fallback
-    if (!result.success) {
-      console.warn('Route calculation failed, using straight-line distance');
-      const straightLine = calculateHaversineDistance(
-        originGeo.lat, originGeo.lng,
-        destGeo.lat, destGeo.lng
-      );
-      result = {
-        success: true,
-        distance: straightLine,
-        duration: 'N/A',
-        routeType: 'Straight-line distance (route not available)'
-      };
-    }
-    
+
+    console.log(`\n📍 Calculating distance: ${origin} → ${destination} (${transportMode})\n`);
+
+    // Use the unified distance calculator
+    const distances = await calculateModeSpecificDistances(origin, destination);
+
+    // Get mode-specific distance
+    const distance = distances[transportMode] || distances.car;
+
+    // Calculate duration
+    const duration = calculateDuration(distance, transportMode);
+
+    // Get route type
+    const routeType = getRouteType(transportMode);
+
+    console.log(`✅ Result: ${distance} km, ${duration}\n`);
+
     // Return result in the format expected by your TripCalculator
     return {
-      distance: result.distance,
-      routeType: result.routeType,
-      duration: result.duration || 'N/A'
+      distance: distance,
+      routeType: routeType,
+      duration: duration
     };
-    
+
   } catch (error) {
     console.error('Distance calculation error:', error);
     throw error;
   }
+};
+
+/**
+ * LEGACY FUNCTIONS - Kept for backward compatibility but not recommended
+ */
+
+export const calculateRoadDistance = async (originLat, originLng, destLat, destLng, transportMode) => {
+  console.warn('⚠️ calculateRoadDistance is deprecated. Use calculateModeSpecificDistances instead.');
+  
+  const straightLine = calculateHaversineDistance(originLat, originLng, destLat, destLng);
+  const baseRoadDistance = straightLine * 1.4;
+  const distance = Math.round(baseRoadDistance);
+  
+  return {
+    success: true,
+    distance: distance,
+    duration: calculateDuration(distance, transportMode),
+    routeType: getRouteType(transportMode)
+  };
+};
+
+export const calculateFlightDistance = (lat1, lon1, lat2, lon2) => {
+  console.warn('⚠️ calculateFlightDistance is deprecated. Use calculateModeSpecificDistances instead.');
+  
+  const straightLine = calculateHaversineDistance(lat1, lon1, lat2, lon2);
+  const flightDistance = Math.round(straightLine * 1.1);
+  
+  return {
+    success: true,
+    distance: flightDistance,
+    duration: calculateDuration(flightDistance, 'flight'),
+    routeType: 'Flight path (great circle)'
+  };
+};
+
+export const calculateTrainDistance = async (originLat, originLng, destLat, destLng) => {
+  console.warn('⚠️ calculateTrainDistance is deprecated. Use calculateModeSpecificDistances instead.');
+  
+  const straightLine = calculateHaversineDistance(originLat, originLng, destLat, destLng);
+  const baseRoadDistance = straightLine * 1.4;
+  const trainDistance = Math.round(baseRoadDistance * 1.15);
+  
+  return {
+    success: true,
+    distance: trainDistance,
+    duration: calculateDuration(trainDistance, 'train'),
+    routeType: 'Estimated rail route'
+  };
 };

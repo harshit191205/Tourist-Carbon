@@ -59,7 +59,6 @@ const CreateTrip = () => {
     setActivities(activities.filter(a => a.id !== id));
   };
 
-  // Haversine distance calculation
   const calculateHaversineDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -81,157 +80,181 @@ const CreateTrip = () => {
     setCalculatingRoutes(true);
 
     try {
-      console.log('\n🚀 ========== ROUTE CALCULATION START ==========');
+      console.clear();
+      console.log('\n🚀 ========== STARTING CALCULATION ==========\n');
       
       // Geocode origin
       const originUrl = `https://api.tomtom.com/search/2/geocode/${encodeURIComponent(tripData.origin)}.json?key=${TOMTOM_API_KEY}&limit=1`;
-      console.log('🔍 Fetching origin coordinates...');
       const originRes = await fetch(originUrl);
       const originData = await originRes.json();
       
       if (!originData.results || originData.results.length === 0) {
-        throw new Error(`Could not find location: ${tripData.origin}`);
+        throw new Error(`Could not find: ${tripData.origin}`);
       }
       
       const originCoords = {
         lat: originData.results[0].position.lat,
         lng: originData.results[0].position.lon
       };
-      console.log('✅ Origin:', originData.results[0].address.freeformAddress);
-      console.log('   Coordinates:', originCoords);
+      console.log(`✅ Origin: ${originData.results[0].address.freeformAddress}`);
 
       // Geocode destination
       const destUrl = `https://api.tomtom.com/search/2/geocode/${encodeURIComponent(tripData.destination)}.json?key=${TOMTOM_API_KEY}&limit=1`;
-      console.log('🔍 Fetching destination coordinates...');
       const destRes = await fetch(destUrl);
       const destData = await destRes.json();
       
       if (!destData.results || destData.results.length === 0) {
-        throw new Error(`Could not find location: ${tripData.destination}`);
+        throw new Error(`Could not find: ${tripData.destination}`);
       }
       
       const destCoords = {
         lat: destData.results[0].position.lat,
         lng: destData.results[0].position.lon
       };
-      console.log('✅ Destination:', destData.results[0].address.freeformAddress);
-      console.log('   Coordinates:', destCoords);
+      console.log(`✅ Destination: ${destData.results[0].address.freeformAddress}`);
 
       // Calculate straight-line distance
       const straightLine = calculateHaversineDistance(
         originCoords.lat, originCoords.lng,
         destCoords.lat, destCoords.lng
       );
-      console.log(`\n📏 Straight-line distance: ${straightLine.toFixed(2)} km`);
+      console.log(`\n📏 Straight-line: ${straightLine.toFixed(2)} km`);
 
-      // Get car route from TomTom
+      // Get car route
       const carUrl = `https://api.tomtom.com/routing/1/calculateRoute/${originCoords.lat},${originCoords.lng}:${destCoords.lat},${destCoords.lng}/json?key=${TOMTOM_API_KEY}&travelMode=car&traffic=false`;
-      console.log('🚗 Fetching car route from TomTom...');
       const carRes = await fetch(carUrl);
       const carData = await carRes.json();
       
-      let carDistance = straightLine * 1.4; // Default fallback
+      let carDistance = straightLine * 1.4;
       
       if (carData.routes && carData.routes.length > 0) {
         carDistance = carData.routes[0].summary.lengthInMeters / 1000;
-        console.log(`✅ TomTom car route: ${carDistance.toFixed(2)} km`);
+        console.log(`🚗 Car route: ${carDistance.toFixed(2)} km`);
       } else {
-        console.log(`⚠️ TomTom API failed, using fallback: ${carDistance.toFixed(2)} km`);
+        console.log(`⚠️ Using fallback: ${carDistance.toFixed(2)} km`);
       }
 
-      // NOW CALCULATE EACH MODE WITH DIFFERENT DISTANCES
-      console.log('\n🎯 ========== CALCULATING EACH TRANSPORT MODE ==========');
+      // NOW CALCULATE EACH MODE SEPARATELY WITH EXPLICIT MATH
+      console.log('\n🎯 ========== CALCULATING EACH MODE ==========\n');
 
-      const modes = [
+      // FLIGHT CALCULATION
+      const flightDistance = Math.round(straightLine * 1.1);
+      const flightDuration = (flightDistance / 800) * 3600;
+      const flightEmissions = flightDistance * 0.175;
+      const flightCost = Math.round(flightDistance * 4.5);
+      
+      console.log('✈️ FLIGHT:');
+      console.log(`   ${straightLine.toFixed(2)} × 1.1 = ${flightDistance} km`);
+
+      // TRAIN CALCULATION
+      const trainDistance = Math.round(carDistance * 1.15);
+      const trainDuration = (trainDistance / 80) * 3600;
+      const trainEmissions = trainDistance * 0.03;
+      const trainCost = Math.round(trainDistance * 1.2);
+      
+      console.log('🚆 TRAIN:');
+      console.log(`   ${carDistance.toFixed(2)} × 1.15 = ${trainDistance} km`);
+
+      // CAR CALCULATION
+      const carDistanceFinal = Math.round(carDistance * 1.0);
+      const carDuration = (carDistanceFinal / 60) * 3600;
+      const carEmissions = carDistanceFinal * 0.215;
+      const carCost = Math.round(carDistanceFinal * 2.5);
+      
+      console.log('🚗 CAR:');
+      console.log(`   ${carDistance.toFixed(2)} × 1.0 = ${carDistanceFinal} km`);
+
+      // BUS CALCULATION
+      const busDistance = Math.round(carDistance * 1.25);
+      const busDuration = (busDistance / 50) * 3600;
+      const busEmissions = busDistance * 0.09;
+      const busCost = Math.round(busDistance * 0.8);
+      
+      console.log('🚌 BUS:');
+      console.log(`   ${carDistance.toFixed(2)} × 1.25 = ${busDistance} km`);
+
+      // Helper to format time
+      const formatTime = (seconds) => {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        return hours >= 24 
+          ? `${Math.floor(hours/24)}d ${hours%24}h`
+          : `${hours}.${Math.round(minutes/6)}h`;
+      };
+
+      // Build options array
+      const options = [
         {
           mode: 'flight',
           icon: '✈️',
           name: 'Flight',
-          emissionFactor: 0.175,
-          costPerKm: 4.5,
-          speed: 800,
-          distanceMultiplier: 1.1, // Flight takes most direct route
-          baseDistance: straightLine
+          distance: flightDistance,
+          travelTime: formatTime(flightDuration),
+          estimatedCost: flightCost,
+          transportEmissions: parseFloat(flightEmissions.toFixed(2)),
+          totalEmissions: parseFloat((flightEmissions + accommodation.nightsStay * 22).toFixed(2)),
+          emissionFactor: 0.175
         },
         {
           mode: 'train',
           icon: '🚆',
           name: 'Train',
-          emissionFactor: 0.03,
-          costPerKm: 1.2,
-          speed: 80,
-          distanceMultiplier: 1.15, // Train routes are ~15% longer than car
-          baseDistance: carDistance
+          distance: trainDistance,
+          travelTime: formatTime(trainDuration),
+          estimatedCost: trainCost,
+          transportEmissions: parseFloat(trainEmissions.toFixed(2)),
+          totalEmissions: parseFloat((trainEmissions + accommodation.nightsStay * 22).toFixed(2)),
+          emissionFactor: 0.03
         },
         {
           mode: 'car_petrol',
           icon: '🚗',
           name: 'Car (Petrol)',
-          emissionFactor: 0.215,
-          costPerKm: 2.5,
-          speed: 60,
-          distanceMultiplier: 1.0, // Base car route
-          baseDistance: carDistance
+          distance: carDistanceFinal,
+          travelTime: formatTime(carDuration),
+          estimatedCost: carCost,
+          transportEmissions: parseFloat(carEmissions.toFixed(2)),
+          totalEmissions: parseFloat((carEmissions + accommodation.nightsStay * 22).toFixed(2)),
+          emissionFactor: 0.215
         },
         {
           mode: 'bus',
           icon: '🚌',
           name: 'Bus',
-          emissionFactor: 0.09,
-          costPerKm: 0.8,
-          speed: 50,
-          distanceMultiplier: 1.25, // Bus takes longer routes with stops
-          baseDistance: carDistance
+          distance: busDistance,
+          travelTime: formatTime(busDuration),
+          estimatedCost: busCost,
+          transportEmissions: parseFloat(busEmissions.toFixed(2)),
+          totalEmissions: parseFloat((busEmissions + accommodation.nightsStay * 22).toFixed(2)),
+          emissionFactor: 0.09
         }
       ];
 
-      const options = modes.map((transport) => {
-        // CRITICAL: Calculate unique distance for each mode
-        const distance = parseFloat((transport.baseDistance * transport.distanceMultiplier).toFixed(2));
-        const durationInSeconds = (distance / transport.speed) * 3600;
-        
-        const transportEmissions = distance * transport.emissionFactor;
-        const accommodationEmissions = accommodation.nightsStay * 22;
-        const totalEmissions = transportEmissions + accommodationEmissions;
-        const estimatedCost = Math.round(distance * transport.costPerKm);
-
-        const hours = Math.floor(durationInSeconds / 3600);
-        const minutes = Math.floor((durationInSeconds % 3600) / 60);
-        const travelTime = hours >= 24 
-          ? `${Math.floor(hours/24)}d ${hours%24}h`
-          : `${hours}.${Math.round(minutes/6)}h`;
-
-        console.log(`\n${transport.icon} ${transport.name}:`);
-        console.log(`   Base: ${transport.baseDistance.toFixed(2)} km × ${transport.distanceMultiplier} = ${distance} km`);
-        console.log(`   Time: ${travelTime}`);
-        console.log(`   Cost: ₹${estimatedCost}`);
-        console.log(`   CO₂: ${totalEmissions.toFixed(2)} kg`);
-
-        return {
-          mode: transport.mode,
-          icon: transport.icon,
-          name: transport.name,
-          distance: distance,
-          travelTime: travelTime,
-          estimatedCost: estimatedCost,
-          transportEmissions: parseFloat(transportEmissions.toFixed(2)),
-          totalEmissions: parseFloat(totalEmissions.toFixed(2)),
-          emissionFactor: transport.emissionFactor
-        };
-      });
-
       options.sort((a, b) => a.totalEmissions - b.totalEmissions);
 
-      console.log('\n✅ ========== CALCULATION COMPLETE ==========');
-      console.log('Final distances:');
-      options.forEach(o => console.log(`   ${o.name}: ${o.distance} km`));
+      console.log('\n✅ ========== FINAL RESULTS ==========');
+      console.log(`Flight: ${options[0].distance} km`);
+      console.log(`Train: ${options[1].distance} km`);
+      console.log(`Car: ${options[2].distance} km`);
+      console.log(`Bus: ${options[3].distance} km`);
+
+      // Verify uniqueness
+      const distances = options.map(o => o.distance);
+      const unique = [...new Set(distances)];
+      
+      if (unique.length === 4) {
+        console.log('\n✅ SUCCESS: All 4 distances are unique!\n');
+      } else {
+        console.error('\n⚠️ WARNING: Some distances are the same!');
+        console.error('Distances:', distances);
+      }
 
       setTransportOptions(options);
       setStep(2);
 
     } catch (error) {
       console.error('❌ ERROR:', error);
-      alert(`Error: ${error.message}\n\nPlease check:\n1. Your TomTom API key is correct\n2. Location names are spelled correctly\n3. You have internet connection`);
+      alert(`Error: ${error.message}`);
     } finally {
       setCalculatingRoutes(false);
     }
@@ -354,12 +377,10 @@ const CreateTrip = () => {
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">Origin *</label>
                   <input type="text" name="origin" value={tripData.origin} onChange={handleInputChange} placeholder="e.g., Delhi, India" className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:border-emerald-500 focus:outline-none" required />
-                  <p className="text-xs text-slate-400 mt-1">💡 Format: City, Country</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">Destination *</label>
                   <input type="text" name="destination" value={tripData.destination} onChange={handleInputChange} placeholder="e.g., Goa, India" className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:border-emerald-500 focus:outline-none" required />
-                  <p className="text-xs text-slate-400 mt-1">💡 Format: City, Country</p>
                 </div>
               </div>
 
@@ -387,32 +408,23 @@ const CreateTrip = () => {
               <div>
                 <h3 className="text-lg font-bold text-white mb-4">🏨 Accommodation</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Type</label>
-                    <select name="type" value={accommodation.type} onChange={handleAccommodationChange} className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:border-emerald-500 focus:outline-none">
-                      <option value="hotel">🏨 Hotel</option>
-                      <option value="hostel">🏠 Hostel</option>
-                      <option value="resort">🏖️ Resort</option>
-                      <option value="homestay">🏡 Homestay</option>
-                      <option value="camping">⛺ Camping</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Nights</label>
-                    <input type="number" name="nightsStay" value={accommodation.nightsStay} onChange={handleAccommodationChange} min="1" className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:border-emerald-500 focus:outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Price/Night (₹)</label>
-                    <input type="number" name="pricePerNight" value={accommodation.pricePerNight} onChange={handleAccommodationChange} min="0" className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:border-emerald-500 focus:outline-none" />
-                  </div>
+                  <select name="type" value={accommodation.type} onChange={handleAccommodationChange} className="px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:border-emerald-500 focus:outline-none">
+                    <option value="hotel">🏨 Hotel</option>
+                    <option value="hostel">🏠 Hostel</option>
+                    <option value="resort">🏖️ Resort</option>
+                    <option value="homestay">🏡 Homestay</option>
+                    <option value="camping">⛺ Camping</option>
+                  </select>
+                  <input type="number" name="nightsStay" value={accommodation.nightsStay} onChange={handleAccommodationChange} min="1" placeholder="Nights" className="px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:border-emerald-500 focus:outline-none" />
+                  <input type="number" name="pricePerNight" value={accommodation.pricePerNight} onChange={handleAccommodationChange} min="0" placeholder="Price/Night (₹)" className="px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:border-emerald-500 focus:outline-none" />
                 </div>
               </div>
 
               <button onClick={calculateTransportOptions} disabled={calculatingRoutes || !tripData.origin || !tripData.destination || !tripData.tripName} className="w-full py-4 bg-gradient-to-r from-emerald-600 to-blue-600 text-white font-bold rounded-lg hover:from-emerald-500 hover:to-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                {calculatingRoutes ? '⏳ Calculating Routes...' : '🚀 Calculate Transport Options'}
+                {calculatingRoutes ? '⏳ Calculating...' : '🚀 Calculate Transport Options'}
               </button>
 
-              <p className="text-xs text-center text-slate-400">🗺️ Powered by TomTom API | Open console (F12) for debug info</p>
+              <p className="text-xs text-center text-slate-400">Open Console (F12) to see calculation details</p>
             </div>
           </div>
         )}
@@ -427,10 +439,10 @@ const CreateTrip = () => {
                     <span className="text-emerald-400 text-2xl">✅</span>
                     <h2 className="text-2xl font-bold text-white">Recommended: {transportOptions[0].name}</h2>
                   </div>
-                  <p className="text-slate-300">Lowest carbon footprint with {transportOptions[0].totalEmissions.toFixed(2)} kg CO₂ total emissions</p>
+                  <p className="text-slate-300">Lowest carbon footprint with {transportOptions[0].totalEmissions.toFixed(2)} kg CO₂</p>
                 </div>
               </div>
-              <button onClick={() => handleTransportSelect(transportOptions[0])} className="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-all whitespace-nowrap">Choose This Option</button>
+              <button onClick={() => handleTransportSelect(transportOptions[0])} className="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-all">Choose This Option</button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -440,7 +452,7 @@ const CreateTrip = () => {
                     <div className="text-6xl mb-3">{transport.icon}</div>
                     <h3 className="text-xl font-bold text-white">{transport.name}</h3>
                   </div>
-                  <div className="space-y-3 text-sm">
+                  <div className="space-y-3">
                     <div className="bg-slate-700 rounded-lg p-3">
                       <p className="text-slate-400 text-xs mb-1">Distance</p>
                       <p className="text-white font-bold text-lg">{transport.distance} km</p>
@@ -450,7 +462,7 @@ const CreateTrip = () => {
                       <p className="text-white font-bold">{transport.travelTime}</p>
                     </div>
                     <div className="bg-slate-700 rounded-lg p-3">
-                      <p className="text-slate-400 text-xs mb-1">Estimated Cost</p>
+                      <p className="text-slate-400 text-xs mb-1">Cost</p>
                       <p className="text-blue-400 font-bold text-lg">{formatCurrency(transport.estimatedCost)}</p>
                     </div>
                     <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-3">
@@ -458,7 +470,7 @@ const CreateTrip = () => {
                       <p className="text-red-400 font-bold">{transport.transportEmissions} kg</p>
                     </div>
                     <div className="bg-emerald-900/30 border border-emerald-500/50 rounded-lg p-3">
-                      <p className="text-slate-400 text-xs mb-1">Total (with stay)</p>
+                      <p className="text-slate-400 text-xs mb-1">Total</p>
                       <p className="text-emerald-400 font-bold text-lg">{transport.totalEmissions} kg</p>
                     </div>
                   </div>
@@ -472,7 +484,7 @@ const CreateTrip = () => {
 
         {step === 3 && selectedTransport && (
           <div className="space-y-6">
-            <div className="bg-slate-800 rounded-lg p-6 shadow-xl">
+            <div className="bg-slate-800 rounded-lg p-6">
               <h2 className="text-2xl font-bold text-white mb-4">📊 Trip Summary</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
@@ -480,12 +492,11 @@ const CreateTrip = () => {
                   <div className="space-y-2 text-sm">
                     <p className="text-slate-400">📍 <strong className="text-white">{tripData.origin}</strong> → <strong className="text-white">{tripData.destination}</strong></p>
                     <p className="text-slate-400">📅 {formatDate(tripData.startDate)} to {formatDate(tripData.endDate)}</p>
-                    <p className="text-slate-400">👥 Group Size: <strong className="text-white">{tripData.groupSize}</strong></p>
                   </div>
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-slate-300 mb-3">Selected Transport</h3>
-                  <div className="flex items-center gap-4 mb-3">
+                  <div className="flex items-center gap-4">
                     <div className="text-4xl">{selectedTransport.icon}</div>
                     <div>
                       <p className="text-xl font-bold text-white">{selectedTransport.name}</p>
@@ -496,23 +507,23 @@ const CreateTrip = () => {
               </div>
             </div>
 
-            <div className="bg-slate-800 rounded-lg p-6 shadow-xl">
+            <div className="bg-slate-800 rounded-lg p-6">
               <h2 className="text-2xl font-bold text-white mb-6">🎯 Plan Activities</h2>
               <div className="bg-slate-700 rounded-lg p-4 mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <input type="text" name="name" value={newActivity.name} onChange={handleActivityChange} placeholder="Activity name" className="px-3 py-2 bg-slate-600 border border-slate-500 rounded-lg text-white placeholder-slate-400 focus:border-emerald-500 focus:outline-none" />
+                  <input type="text" name="name" value={newActivity.name} onChange={handleActivityChange} placeholder="Activity name" className="px-3 py-2 bg-slate-600 border border-slate-500 rounded-lg text-white focus:border-emerald-500 focus:outline-none" />
                   <select name="type" value={newActivity.type} onChange={handleActivityChange} className="px-3 py-2 bg-slate-600 border border-slate-500 rounded-lg text-white focus:border-emerald-500 focus:outline-none">
                     <option value="sightseeing">🏛️ Sightseeing</option>
-                    <option value="adventure_sports">🏔️ Adventure Sports</option>
+                    <option value="adventure_sports">🏔️ Adventure</option>
                     <option value="water_sports">🏄 Water Sports</option>
-                    <option value="wildlife_safari">🦁 Wildlife Safari</option>
-                    <option value="cultural_tour">🎭 Cultural Tour</option>
+                    <option value="wildlife_safari">🦁 Safari</option>
+                    <option value="cultural_tour">🎭 Cultural</option>
                     <option value="shopping">🛍️ Shopping</option>
-                    <option value="spa_wellness">💆 Spa & Wellness</option>
+                    <option value="spa_wellness">💆 Spa</option>
                   </select>
-                  <input type="number" name="estimatedCost" value={newActivity.estimatedCost} onChange={handleActivityChange} placeholder="Est. cost (₹)" min="0" className="px-3 py-2 bg-slate-600 border border-slate-500 rounded-lg text-white focus:border-emerald-500 focus:outline-none" />
+                  <input type="number" name="estimatedCost" value={newActivity.estimatedCost} onChange={handleActivityChange} placeholder="Cost (₹)" min="0" className="px-3 py-2 bg-slate-600 border border-slate-500 rounded-lg text-white focus:border-emerald-500 focus:outline-none" />
                 </div>
-                <button onClick={addActivity} className="mt-4 px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg transition-all">➕ Add Activity</button>
+                <button onClick={addActivity} className="mt-4 px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg transition-all">➕ Add</button>
               </div>
 
               {activities.length > 0 && (
@@ -536,8 +547,8 @@ const CreateTrip = () => {
               )}
             </div>
 
-            <div className="bg-gradient-to-r from-emerald-600 to-blue-600 rounded-lg p-6 shadow-xl">
-              <h2 className="text-2xl font-bold text-white mb-4">💰 Total Trip Budget</h2>
+            <div className="bg-gradient-to-r from-emerald-600 to-blue-600 rounded-lg p-6">
+              <h2 className="text-2xl font-bold text-white mb-4">💰 Total Budget</h2>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
                 <div>
                   <p className="text-emerald-100 text-sm mb-1">Transport</p>

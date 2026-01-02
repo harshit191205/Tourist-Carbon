@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { calculateTravelDistance } from "../utils/distanceCalculator";
+import { calculateModeSpecificDistances } from "../utils/distanceCalculator";
+
 
 const TripCalculator = ({ onCalculate }) => {
   const navigate = useNavigate();
@@ -75,6 +76,7 @@ const TripCalculator = ({ onCalculate }) => {
     }));
   };
 
+  // UPDATED: Use unified distance calculator
   const handleCalculateDistance = async (e) => {
     e.preventDefault();
     
@@ -88,22 +90,56 @@ const TripCalculator = ({ onCalculate }) => {
     setDistanceInfo("");
 
     try {
-      const result = await calculateTravelDistance(
+      console.log('\n🔍 Calculating distance using UNIFIED formula...\n');
+      
+      // USE THE UNIFIED CALCULATOR
+      const distances = await calculateModeSpecificDistances(
         formData.origin,
-        formData.destination,
-        formData.transportMode
+        formData.destination
       );
+
+      // Map transport mode to correct distance key
+      let modeKey = formData.transportMode;
+      
+      // Handle vehicle type variations for car/motorcycle
+      if (formData.transportMode === 'car' && formData.vehicleType) {
+        modeKey = `car_${formData.vehicleType}`; // car_petrol, car_diesel, etc.
+      } else if (formData.transportMode === 'motorcycle') {
+        modeKey = 'motorcycle';
+      }
+
+      // Get the correct distance for the selected mode
+      const calculatedDistance = distances[modeKey] || distances[formData.transportMode] || distances.car;
+
+      console.log(`✅ ${formData.transportMode} (${formData.vehicleType || 'default'}): ${calculatedDistance} km`);
+
+      // Calculate route type for display
+      const routeTypes = {
+        flight: 'Flight path',
+        train: 'Rail route',
+        car: 'Road route',
+        car_petrol: 'Car route (Petrol)',
+        car_diesel: 'Car route (Diesel)',
+        car_hybrid: 'Car route (Hybrid)',
+        car_electric: 'Car route (Electric)',
+        motorcycle: 'Motorcycle route',
+        bus: 'Bus route',
+        bicycle: 'Cycling route'
+      };
+
+      const routeType = routeTypes[modeKey] || routeTypes[formData.transportMode] || 'Road route';
 
       setFormData((prev) => ({
         ...prev,
-        distance: result.distance,
-        routeInfo: result.routeType,
+        distance: calculatedDistance,
+        routeInfo: routeType,
         calculatingDistance: false,
       }));
 
-      setDistanceInfo(`${result.routeType}: ${result.distance} km`);
+      setDistanceInfo(`✓ ${routeType}: ${calculatedDistance} km`);
+
     } catch (err) {
-      console.error(err);
+      console.error('Distance calculation error:', err);
       setDistanceError("Could not calculate distance. Please enter manually.");
       setFormData((prev) => ({ ...prev, calculatingDistance: false }));
     }
@@ -419,7 +455,7 @@ const TripCalculator = ({ onCalculate }) => {
               />
               {distanceInfo && (
                 <div className="mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
-                  <p className="text-sm font-medium text-emerald-300">✓ {distanceInfo}</p>
+                  <p className="text-sm font-medium text-emerald-300">{distanceInfo}</p>
                 </div>
               )}
               {distanceError && (
@@ -610,28 +646,6 @@ const TripCalculator = ({ onCalculate }) => {
                 className="input-field w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-100"
               />
             </div>
-
-            {/* <div>
-              <label className="block text-sm font-semibold text-slate-300 mb-3">
-                🛍️ Shopping Intensity
-              </label>
-              <div className="grid grid-cols-3 gap-3">
-                {['minimal', 'moderate', 'heavy'].map((intensity) => (
-                  <button
-                    key={intensity}
-                    type="button"
-                    onClick={() => setFormData({ ...formData, shoppingIntensity: intensity })}
-                    className={`py-3 px-4 rounded-lg font-semibold capitalize transition-all ${
-                      formData.shoppingIntensity === intensity
-                        ? 'bg-gradient-to-r from-emerald-500 to-blue-500 text-white shadow-lg'
-                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                    }`}
-                  >
-                    {intensity}
-                  </button>
-                ))}
-              </div>
-            </div> */}
 
             <div className="flex gap-3">
               <button
