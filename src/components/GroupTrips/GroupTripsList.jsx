@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { collection, query, getDocs } from 'firebase/firestore';
@@ -12,13 +12,7 @@ const GroupTripsList = () => {
   const [filter, setFilter] = useState('all');
   const [debugInfo, setDebugInfo] = useState(null);
 
-  useEffect(() => {
-    if (currentUser) {
-      fetchGroupTrips();
-    }
-  }, [currentUser, filter]);
-
-  const fetchGroupTrips = async () => {
+  const fetchGroupTrips = useCallback(async () => {
     if (!currentUser) {
       console.log('❌ No user logged in');
       setLoading(false);
@@ -100,7 +94,13 @@ const GroupTripsList = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser, filter]);
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchGroupTrips();
+    }
+  }, [currentUser, fetchGroupTrips]);
 
   const getMemberCount = (trip) => {
     return trip.members?.length || 0;

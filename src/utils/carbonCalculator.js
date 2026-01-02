@@ -52,11 +52,10 @@ const calculateTransportEmissions = (transportData) => {
     return 0;
   }
 
-  const { mode, distance, passengers } = transportData;
+  const { mode, distance } = transportData;
   
   // Validate inputs
   const validDistance = Number(distance) || 0;
-  const validPassengers = Number(passengers) || 1;
   
   if (validDistance <= 0) {
     console.log('⚠️ Invalid distance:', distance);
