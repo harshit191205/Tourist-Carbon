@@ -65,8 +65,7 @@ const PreTripPlanning = () => {
 
   const [selectedScenario, setSelectedScenario] = useState(null);
   const [showComparison, setShowComparison] = useState(false);
-
-  const TOMTOM_API_KEY = import.meta.env.VITE_TOMTOM_API_KEY || 'YOUR_API_KEY';
+  const [loading, setLoading] = useState(false);
 
   // Emission factors (kg CO2 per km)
   const EMISSION_FACTORS = {
@@ -74,7 +73,10 @@ const PreTripPlanning = () => {
     train: 0.03,
     car_petrol: 0.215,
     car_diesel: 0.19,
+    car_hybrid: 0.15,
+    car_electric: 0.05,
     bus: 0.09,
+    motorcycle: 0.12,
     bicycle: 0,
     walk: 0
   };
@@ -83,110 +85,6 @@ const PreTripPlanning = () => {
   const calculateTransportEmissions = (mode, distance, passengers = 1) => {
     const factor = EMISSION_FACTORS[mode] || 0;
     return factor * distance * passengers;
-  };
-
-  // Haversine distance calculation (straight-line)
-  const calculateHaversineDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
-
-  // Geocode location using TomTom
-  const geocodeLocation = async (location) => {
-    try {
-      const url = `https://api.tomtom.com/search/2/geocode/${encodeURIComponent(location)}.json?key=${TOMTOM_API_KEY}&limit=1`;
-      const response = await fetch(url);
-      const data = await response.json();
-
-      if (data.results && data.results.length > 0) {
-        return {
-          lat: data.results[0].position.lat,
-          lng: data.results[0].position.lon,
-          name: data.results[0].address.freeformAddress
-        };
-      }
-      return null;
-    } catch (error) {
-      console.error('Geocoding error:', error);
-      return null;
-    }
-  };
-
-  // THE CORRECT FORMULA THAT GIVES 1400km FOR DELHI-MUMBAI
-  const calculateModeSpecificDistances = async (origin, destination) => {
-    try {
-      console.log('\n🚀 ========== DISTANCE CALCULATION (1400km FORMULA) ==========\n');
-
-      // Step 1: Geocode both locations
-      const originCoords = await geocodeLocation(origin);
-      const destCoords = await geocodeLocation(destination);
-
-      if (!originCoords || !destCoords) {
-        throw new Error('Could not find locations');
-      }
-
-      console.log(`✅ Origin: ${originCoords.name}`);
-      console.log(`✅ Destination: ${destCoords.name}`);
-
-      // Step 2: Calculate straight-line distance (Haversine)
-      const straightLineKm = calculateHaversineDistance(
-        originCoords.lat, originCoords.lng,
-        destCoords.lat, destCoords.lng
-      );
-      
-      console.log(`\n📏 Straight-line distance: ${straightLineKm.toFixed(2)} km`);
-
-      // THE KEY FORMULA: Use straight-line * 1.4 as BASE road distance
-      // This gives ~1400km for Delhi-Mumbai (straight-line ~1000km × 1.4 = 1400km)
-      const baseRoadDistance = straightLineKm * 1.4;
-      
-      console.log(`🛣️ Base road distance: ${straightLineKm.toFixed(2)} × 1.4 = ${baseRoadDistance.toFixed(2)} km`);
-
-      // Step 3: Calculate mode-specific distances from base road distance
-      console.log('\n🎯 ========== MODE-SPECIFIC CALCULATIONS ==========\n');
-
-      // Flight: Use straight-line + 10% for air corridors
-      const flightDistance = Math.round(straightLineKm * 1.1);
-      console.log(`✈️ FLIGHT: ${straightLineKm.toFixed(2)} × 1.1 = ${flightDistance} km`);
-
-      // Train: Road distance + 15% for rail routes
-      const trainDistance = Math.round(baseRoadDistance * 1.15);
-      console.log(`🚆 TRAIN: ${baseRoadDistance.toFixed(2)} × 1.15 = ${trainDistance} km`);
-
-      // Car: Base road distance (this is our 1400km reference)
-      const carDistance = Math.round(baseRoadDistance);
-      console.log(`🚗 CAR: ${baseRoadDistance.toFixed(2)} × 1.0 = ${carDistance} km`);
-
-      // Bus: Road distance + 25% for stops and detours
-      const busDistance = Math.round(baseRoadDistance * 1.25);
-      console.log(`🚌 BUS: ${baseRoadDistance.toFixed(2)} × 1.25 = ${busDistance} km`);
-
-      console.log('\n✅ ========== CALCULATION COMPLETE ==========\n');
-
-      return {
-        flight: flightDistance,
-        train: trainDistance,
-        car_petrol: carDistance,
-        bus: busDistance
-      };
-
-    } catch (error) {
-      console.error('❌ Distance calculation error:', error);
-      // Fallback to approximate values
-      return {
-        flight: 1100,
-        train: 1610,
-        car_petrol: 1400,
-        bus: 1750
-      };
-    }
   };
 
   const handlePlanTrip = async () => {
@@ -211,71 +109,88 @@ const PreTripPlanning = () => {
     }
 
     setAccommodationPlan(prev => ({ ...prev, nights }));
+    setLoading(true);
     
-    // Get mode-specific distances using the CORRECT 1400km formula
-    const distances = await calculateModeSpecificDistances(
-      tripDetails.origin,
-      tripDetails.destination
-    );
+    try {
+      // Use TomTom-based unified calculator
+      const distances = await calculateModeSpecificDistances(
+        tripDetails.origin,
+        tripDetails.destination
+      );
 
-    console.log('📊 Final distances (1400km formula):');
-    console.log(`✈️ Flight: ${distances.flight} km`);
-    console.log(`🚆 Train: ${distances.train} km`);
-    console.log(`🚗 Car: ${distances.car_petrol} km (BASE)`);
-    console.log(`🚌 Bus: ${distances.bus} km`);
+      console.log('📊 TomTom API distances:');
+      console.log(`✈️ Flight: ${distances.flight} km`);
+      console.log(`🚆 Train: ${distances.train} km`);
+      console.log(`🚗 Car: ${distances.car} km`);
+      console.log(`🚌 Bus: ${distances.bus} km`);
 
-    // Calculate emissions for each transport mode
-    const updatedScenarios = scenarios.map(scenario => {
-      const distance = distances[scenario.mode];
+      // Calculate emissions for each transport mode
+      const updatedScenarios = scenarios.map(scenario => {
+        const distance = distances[scenario.mode];
 
-      // Calculate transport emissions
-      const emissionsPerPerson = calculateTransportEmissions(scenario.mode, distance, 1);
-      const totalTransportEmissions = emissionsPerPerson * tripDetails.travelers;
+        // Calculate transport emissions
+        const emissionsPerPerson = calculateTransportEmissions(scenario.mode, distance, 1);
+        const totalTransportEmissions = emissionsPerPerson * tripDetails.travelers;
 
-      // Estimate costs (₹/km rates)
-      const costPerKm = {
-        flight: 4.5,
-        train: 1.2,
-        car_petrol: 2.5,
-        bus: 0.8
-      };
+        // Estimate costs (₹/km rates)
+        const costPerKm = {
+          flight: 4.5,
+          train: 1.2,
+          car_petrol: 2.5,
+          car_diesel: 2.3,
+          car_hybrid: 2.0,
+          car_electric: 1.5,
+          bus: 0.8,
+          motorcycle: 1.5
+        };
 
-      const totalCost = (costPerKm[scenario.mode] || 2) * distance * tripDetails.travelers;
+        const totalCost = (costPerKm[scenario.mode] || 2) * distance * tripDetails.travelers;
 
-      // Estimate travel time in hours
-      const speedKmh = {
-        flight: 800,
-        train: 80,
-        car_petrol: 60,
-        bus: 50
-      };
+        // Estimate travel time in hours
+        const speedKmh = {
+          flight: 800,
+          train: 80,
+          car_petrol: 60,
+          car_diesel: 60,
+          car_hybrid: 60,
+          car_electric: 60,
+          bus: 50,
+          motorcycle: 70
+        };
 
-      let timeInHours = distance / (speedKmh[scenario.mode] || 60);
+        let timeInHours = distance / (speedKmh[scenario.mode] || 60);
+        
+        // Add airport/station time for flights
+        if (scenario.mode === 'flight') {
+          timeInHours += 2;
+        }
+
+        const formatTime = (hours) => {
+          if (hours < 1) return `${Math.round(hours * 60)}min`;
+          if (hours < 24) return `${hours.toFixed(1)}h`;
+          const days = Math.floor(hours / 24);
+          const remainingHours = Math.round(hours % 24);
+          return `${days}d ${remainingHours}h`;
+        };
+
+        return {
+          ...scenario,
+          distance,
+          emissions: totalTransportEmissions,
+          cost: totalCost,
+          time: formatTime(timeInHours)
+        };
+      });
+
+      setScenarios(updatedScenarios);
+      setShowComparison(true);
       
-      // Add airport/station time for flights
-      if (scenario.mode === 'flight') {
-        timeInHours += 2;
-      }
-
-      const formatTime = (hours) => {
-        if (hours < 1) return `${Math.round(hours * 60)}min`;
-        if (hours < 24) return `${hours.toFixed(1)}h`;
-        const days = Math.floor(hours / 24);
-        const remainingHours = Math.round(hours % 24);
-        return `${days}d ${remainingHours}h`;
-      };
-
-      return {
-        ...scenario,
-        distance,
-        emissions: totalTransportEmissions,
-        cost: totalCost,
-        time: formatTime(timeInHours)
-      };
-    });
-
-    setScenarios(updatedScenarios);
-    setShowComparison(true);
+    } catch (error) {
+      console.error('❌ Distance calculation error:', error);
+      alert('⚠️ Could not calculate distances. Please check your TomTom API key and location names.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getAccommodationEmissions = () => {
@@ -301,6 +216,7 @@ const PreTripPlanning = () => {
   };
 
   const getRecommendation = () => {
+    if (scenarios.length === 0) return null;
     const sorted = [...scenarios].sort((a, b) => getTotalEmissions(a) - getTotalEmissions(b));
     return sorted[0];
   };
@@ -312,25 +228,21 @@ const PreTripPlanning = () => {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Header */}
       <div className="text-center mb-8">
         <h1 className="text-5xl font-bold gradient-text mb-4">
           🗺️ Pre-Trip Carbon Planning
         </h1>
         <p className="text-xl text-slate-300 max-w-3xl mx-auto">
-          Plan your trip in advance and compare different travel options to minimize your carbon footprint
+          Plan your trip using TomTom API for accurate route distances
         </p>
       </div>
 
-      {/* Trip Details Form */}
       <div className="card p-8 mb-8">
         <h2 className="text-2xl font-bold gradient-text mb-6">📍 Trip Details</h2>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Origin City *
-            </label>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Origin City *</label>
             <input
               type="text"
               value={tripDetails.origin}
@@ -341,9 +253,7 @@ const PreTripPlanning = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Destination City *
-            </label>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Destination City *</label>
             <input
               type="text"
               value={tripDetails.destination}
@@ -354,9 +264,7 @@ const PreTripPlanning = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Start Date *
-            </label>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Start Date *</label>
             <input
               type="date"
               value={tripDetails.startDate}
@@ -367,9 +275,7 @@ const PreTripPlanning = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              End Date *
-            </label>
+            <label className="block text-sm font-medium text-slate-300 mb-2">End Date *</label>
             <input
               type="date"
               value={tripDetails.endDate}
@@ -380,9 +286,7 @@ const PreTripPlanning = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Number of Travelers
-            </label>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Number of Travelers</label>
             <input
               type="number"
               value={tripDetails.travelers}
@@ -394,9 +298,7 @@ const PreTripPlanning = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Accommodation Type
-            </label>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Accommodation Type</label>
             <select
               value={accommodationPlan.type}
               onChange={(e) => setAccommodationPlan({...accommodationPlan, type: e.target.value})}
@@ -413,229 +315,89 @@ const PreTripPlanning = () => {
 
         <button
           onClick={handlePlanTrip}
-          className="mt-6 w-full px-8 py-4 rounded-lg bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white font-bold text-lg transition-all"
+          disabled={loading}
+          className="mt-6 w-full px-8 py-4 rounded-lg bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white font-bold text-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          🔍 Compare Travel Options
+          {loading ? (
+            <>⏳ Calculating </>
+          ) : (
+            <>🔍 Compare Travel Options</>
+          )}
         </button>
       </div>
 
-      {/* ALL THE REST OF THE UI STAYS THE SAME */}
       {showComparison && (
-        <>
-          <div className="card p-6 mb-6 bg-blue-500/10 border border-blue-500/30">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-              <div>
-                <p className="text-sm text-slate-400">Route</p>
-                <p className="text-lg font-bold text-slate-100">{tripDetails.origin} → {tripDetails.destination}</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-400">Duration</p>
-                <p className="text-lg font-bold text-slate-100">{accommodationPlan.nights} night{accommodationPlan.nights !== 1 ? 's' : ''}</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-400">Travelers</p>
-                <p className="text-lg font-bold text-slate-100">{tripDetails.travelers}</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-400">Stay Emissions</p>
-                <p className="text-lg font-bold text-purple-400">{getAccommodationEmissions().toFixed(2)} kg CO₂</p>
+        <div className="space-y-6">
+          {/* Recommendation Banner */}
+          {getRecommendation() && (
+            <div className="card p-6 bg-gradient-to-r from-emerald-500/20 to-blue-500/20 border-2 border-emerald-500">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="text-5xl">{getRecommendation().icon}</div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-emerald-400">✅ Recommended: {getRecommendation().name}</h3>
+                    <p className="text-slate-300">
+                      Lowest carbon footprint with {getTotalEmissions(getRecommendation()).toFixed(2)} kg CO₂ total emissions
+                      ({getRecommendation().emissions.toFixed(2)} kg transport + {getAccommodationEmissions().toFixed(2)} kg stay)
+                    </p>
+                  </div>
+                </div>
+                {/* <button
+                  onClick={() => handleSaveAndProceed(getRecommendation())}
+                  className="px-6 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all"
+                >
+                  Choose This Option
+                </button> */}
               </div>
             </div>
-          </div>
+          )}
 
-          <div className="card p-6 mb-8 bg-gradient-to-r from-emerald-500/10 to-green-500/10 border-2 border-emerald-500/30">
-            <div className="flex items-center gap-4">
-              <div className="text-6xl">{getRecommendation().icon}</div>
-              <div className="flex-1">
-                <h3 className="text-2xl font-bold text-emerald-400 mb-2">
-                  ✅ Recommended: {getRecommendation().name}
-                </h3>
-                <p className="text-slate-300">
-                  Lowest carbon footprint with {getTotalEmissions(getRecommendation()).toFixed(2)} kg CO₂ total emissions
-                  ({getRecommendation().emissions.toFixed(2)} kg transport + {getAccommodationEmissions().toFixed(2)} kg stay)
-                </p>
-              </div>
-              <button
-                onClick={() => handleSaveAndProceed(getRecommendation())}
-                className="px-6 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-all"
-              >
-                Choose This Option
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {/* Transport Options Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {scenarios.map((scenario) => (
-              <div
-                key={scenario.id}
-                className={`card p-6 hover:scale-105 transition-transform cursor-pointer ${
-                  scenario.id === getRecommendation().id ? 'border-2 border-emerald-500' : ''
-                }`}
-                onClick={() => handleSaveAndProceed(scenario)}
-              >
-                <div className="text-center">
-                  <div className="text-5xl mb-3">{scenario.icon}</div>
-                  <h3 className="text-xl font-bold text-slate-100 mb-4">
-                    {scenario.name}
-                  </h3>
+              <div key={scenario.id} className="card p-6 hover:scale-105 transition-transform">
+                <div className="text-center mb-4">
+                  <div className="text-5xl mb-2">{scenario.icon}</div>
+                  <h3 className="text-xl font-bold text-slate-100">{scenario.name}</h3>
+                </div>
 
-                  <div className="space-y-3 text-left">
-                    <div className="p-3 bg-slate-800 rounded-lg">
-                      <p className="text-xs text-slate-500">Distance</p>
-                      <p className="text-lg font-bold text-slate-100">
-                        {scenario.distance} km
-                      </p>
-                    </div>
-
-                    <div className="p-3 bg-slate-800 rounded-lg">
-                      <p className="text-xs text-slate-500">Travel Time</p>
-                      <p className="text-lg font-bold text-slate-100">
-                        {scenario.time}
-                      </p>
-                    </div>
-
-                    <div className="p-3 bg-slate-800 rounded-lg">
-                      <p className="text-xs text-slate-500">Estimated Cost</p>
-                      <p className="text-lg font-bold text-blue-400">
-                        ₹{Math.round(scenario.cost)}
-                      </p>
-                    </div>
-
-                    <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                      <p className="text-xs text-slate-500">Transport CO₂</p>
-                      <p className="text-lg font-bold text-red-400">
-                        {scenario.emissions.toFixed(2)} kg
-                      </p>
-                    </div>
-
-                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
-                      <p className="text-xs text-slate-500">Total (with stay)</p>
-                      <p className="text-lg font-bold text-emerald-400">
-                        {getTotalEmissions(scenario).toFixed(2)} kg
-                      </p>
-                    </div>
+                <div className="space-y-3">
+                  <div className="bg-slate-800 p-3 rounded-lg">
+                    <div className="text-xs text-slate-400">Distance</div>
+                    <div className="text-lg font-bold text-slate-100">{scenario.distance} km</div>
                   </div>
 
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSaveAndProceed(scenario);
-                    }}
-                    className="mt-4 w-full px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-all"
-                  >
-                    Select & Continue
-                  </button>
+                  <div className="bg-slate-800 p-3 rounded-lg">
+                    <div className="text-xs text-slate-400">Travel Time</div>
+                    <div className="text-lg font-bold text-slate-100">{scenario.time}</div>
+                  </div>
+
+                  <div className="bg-slate-800 p-3 rounded-lg">
+                    <div className="text-xs text-slate-400">Estimated Cost</div>
+                    <div className="text-lg font-bold text-blue-400">₹{scenario.cost.toFixed(0)}</div>
+                  </div>
+
+                  <div className="bg-red-500/10 border border-red-500/30 p-3 rounded-lg">
+                    <div className="text-xs text-slate-400">Transport CO₂</div>
+                    <div className="text-lg font-bold text-red-400">{scenario.emissions.toFixed(2)} kg</div>
+                  </div>
+
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 p-3 rounded-lg">
+                    <div className="text-xs text-slate-400">Total (with stay)</div>
+                    <div className="text-lg font-bold text-emerald-400">{getTotalEmissions(scenario).toFixed(2)} kg</div>
+                  </div>
                 </div>
+
+                {/* <button
+                  onClick={() => handleSaveAndProceed(scenario)}
+                  className="mt-4 w-full px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-all"
+                >
+                  Select & Continue
+                </button> */}
               </div>
             ))}
           </div>
-
-          <div className="card p-8">
-            <h2 className="text-2xl font-bold gradient-text mb-6">📊 Detailed Comparison</h2>
-
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-700">
-                    <th className="text-left p-4 text-slate-300">Transport Mode</th>
-                    <th className="text-center p-4 text-slate-300">Distance</th>
-                    <th className="text-center p-4 text-slate-300">Time</th>
-                    <th className="text-center p-4 text-slate-300">Cost</th>
-                    <th className="text-center p-4 text-slate-300">Transport CO₂</th>
-                    <th className="text-center p-4 text-slate-300">Stay CO₂</th>
-                    <th className="text-center p-4 text-slate-300">Total CO₂</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scenarios.map((scenario) => (
-                    <tr key={scenario.id} className="border-b border-slate-800 hover:bg-slate-800/50">
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-2xl">{scenario.icon}</span>
-                          <span className="font-semibold text-slate-100">{scenario.name}</span>
-                        </div>
-                      </td>
-                      <td className="text-center p-4 text-slate-300">{scenario.distance} km</td>
-                      <td className="text-center p-4 text-slate-300">{scenario.time}</td>
-                      <td className="text-center p-4 text-blue-400 font-semibold">
-                        ₹{Math.round(scenario.cost)}
-                      </td>
-                      <td className="text-center p-4 text-orange-400 font-semibold">
-                        {scenario.emissions.toFixed(2)} kg
-                      </td>
-                      <td className="text-center p-4 text-purple-400 font-semibold">
-                        {getAccommodationEmissions().toFixed(2)} kg
-                      </td>
-                      <td className="text-center p-4 text-emerald-400 font-bold">
-                        {getTotalEmissions(scenario).toFixed(2)} kg
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="card p-8 mt-8">
-            <h2 className="text-2xl font-bold gradient-text mb-6">📈 Emissions Comparison</h2>
-            <div className="space-y-4">
-              {scenarios.map((scenario) => {
-                const totalEmissions = getTotalEmissions(scenario);
-                const maxEmissions = Math.max(...scenarios.map(s => getTotalEmissions(s)));
-                const percentage = (totalEmissions / maxEmissions) * 100;
-                
-                return (
-                  <div key={scenario.id}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-2xl">{scenario.icon}</span>
-                        <span className="font-semibold text-slate-200">{scenario.name}</span>
-                      </div>
-                      <span className="text-emerald-400 font-bold">{totalEmissions.toFixed(2)} kg CO₂</span>
-                    </div>
-                    <div className="w-full bg-slate-800 rounded-full h-4">
-                      <div
-                        className="bg-gradient-to-r from-emerald-500 to-blue-500 rounded-full h-4 transition-all flex items-center justify-end pr-2"
-                        style={{ width: `${percentage}%` }}
-                      >
-                        <span className="text-xs text-white font-bold">{percentage.toFixed(0)}%</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="card p-8 mt-8">
-            <h2 className="text-2xl font-bold gradient-text mb-6">💡 Tips to Reduce Your Footprint</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="p-4 bg-slate-800 rounded-lg">
-                <div className="text-3xl mb-3">🚆</div>
-                <h3 className="font-bold text-slate-100 mb-2">Choose Rail Over Air</h3>
-                <p className="text-sm text-slate-400">
-                  Trains emit up to 83% less CO₂ than flights (0.03 vs 0.175 kg/km)
-                </p>
-              </div>
-
-              <div className="p-4 bg-slate-800 rounded-lg">
-                <div className="text-3xl mb-3">🏨</div>
-                <h3 className="font-bold text-slate-100 mb-2">Eco-Friendly Stays</h3>
-                <p className="text-sm text-slate-400">
-                  Hostels emit 84% less than 5-star hotels (6.5 vs 40 kg CO₂/night)
-                </p>
-              </div>
-
-              <div className="p-4 bg-slate-800 rounded-lg">
-                <div className="text-3xl mb-3">👥</div>
-                <h3 className="font-bold text-slate-100 mb-2">Travel in Groups</h3>
-                <p className="text-sm text-slate-400">
-                  Share rides to split emissions and costs among travelers
-                </p>
-              </div>
-            </div>
-          </div>
-        </>
+        </div>
       )}
     </div>
   );
