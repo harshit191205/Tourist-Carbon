@@ -187,7 +187,7 @@ const SimplifiedReportPage = ({ emissions, tripData }) => {
             <span>•</span>
             <span>🗓️ {nights} nights</span>
             <span>•</span>
-            <span>✈️ {mode}</span>
+            <span>{mode}</span>
           </div>
           
           <div className="bg-slate-800/50 rounded-2xl p-8 inline-block">

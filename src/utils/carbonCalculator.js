@@ -1,270 +1,267 @@
-/**
- * SIMPLIFIED CARBON CALCULATOR
- * Using standard emission factors
- */
-
-import {
-  transportFactors,
-  accommodationFactors,
-  foodFactors,
-  activityFactors
-} from '../data/emissionFactors';
-
-/**
- * Calculate transport emissions
- * Formula: Distance × Emission Factor
- */
-export const calculateTransportEmissions = (transportData) => {
-  const { mode, distance } = transportData;
+// Standard emission factors (kg CO2e per unit)
+const EMISSION_FACTORS = {
+  // Transport (per km)
+  transport: {
+    flight: 0.175,
+    train: 0.03,
+    car_petrol: 0.215,
+    car_diesel: 0.19,
+    car_cng: 0.13,
+    car_ev: 0.05,
+    bus: 0.09,
+    bicycle: 0,
+    walk: 0
+  },
   
-  let factor = 0;
+  // Accommodation (per night)
+  accommodation: {
+    '5_star_hotel': 40,
+    '3_star_hotel': 20,
+    'budget_hotel': 12.5,
+    'guesthouse': 10,
+    'eco_lodge': 7.5,
+    'hostel': 6.5,
+    'camping': 2.5
+  },
   
-  // Map mode to emission factor
-  switch (mode) {
-    case 'flight':
-      factor = transportFactors.flight;
-      break;
-    case 'train':
-      factor = transportFactors.train;
-      break;
-    case 'bus':
-      factor = transportFactors.bus;
-      break;
-    case 'car':
-      // Use vehicle type if available
-      if (transportData.vehicleType === 'diesel') {
-        factor = transportFactors['car-diesel'];
-      } else {
-        factor = transportFactors['car-petrol'];
-      }
-      // Divide by number of passengers
-      if (transportData.passengers && transportData.passengers > 1) {
-        factor = factor / transportData.passengers;
-      }
-      break;
-    case 'motorcycle':
-      factor = transportFactors['car-petrol'] * 0.5; // Roughly half of car
-      break;
-    case 'bicycle':
-      factor = transportFactors.bicycle;
-      break;
-    case 'walk':
-      factor = transportFactors.walk;
-      break;
-    default:
-      factor = 0;
+  // Activities
+  activities: {
+    sightseeing: 2,
+    adventure_sports: 10,
+    water_sports: 8,
+    wildlife_safari: 15,
+    cultural_tour: 3,
+    shopping: 1,
+    spa_wellness: 5
+  },
+  
+  // Food (per meal)
+  food: {
+    non_veg: 4,
+    veg: 1.5,
+    vegan: 1.0
   }
-  
-  const emissions = distance * factor;
-  
-  return {
-    total: emissions.toFixed(2),
-    factor: factor.toFixed(3),
-    formula: `${distance} km × ${factor.toFixed(3)} kg CO₂e/km = ${emissions.toFixed(2)} kg CO₂e`
-  };
 };
 
-/**
- * Calculate accommodation emissions
- * Formula: Nights × Emission Factor
- */
-export const calculateAccommodationEmissions = (accommodationData) => {
-  const { type, nights } = accommodationData;
+// Calculate transport emissions
+const calculateTransportEmissions = (transportData) => {
+  console.log('🚗 Calculating transport emissions:', transportData);
   
-  let factor = 0;
-  
-  // Map type to emission factor
-  switch (type) {
-    case 'hotel':
-      factor = accommodationData.starRating >= 4 
-        ? accommodationFactors['5star-hotel'] 
-        : accommodationFactors['3star-hotel'];
-      break;
-    case 'hostel':
-      factor = accommodationFactors.hostel;
-      break;
-    case 'Homestay':
-      factor = accommodationFactors['budget-hotel'];
-      break;
-    case 'ecoresort':
-      factor = accommodationFactors['eco-lodge'];
-      break;
-    default:
-      factor = accommodationFactors.guesthouse;
+  if (!transportData || !transportData.mode) {
+    console.log('⚠️ No transport data provided');
+    return 0;
   }
+
+  const { mode, distance, passengers } = transportData;
   
-  // Adjust for room sharing
-  if (accommodationData.roomSharing === 'shared') {
-    factor = factor * 0.5; // 50% reduction when sharing
+  // Validate inputs
+  const validDistance = Number(distance) || 0;
+  const validPassengers = Number(passengers) || 1;
+  
+  if (validDistance <= 0) {
+    console.log('⚠️ Invalid distance:', distance);
+    return 0;
   }
+
+  const emissionFactor = EMISSION_FACTORS.transport[mode] || 0;
+  const emissions = emissionFactor * validDistance;
   
-  const emissions = nights * factor;
+  console.log(`📊 Transport: ${mode}, ${validDistance}km, Factor: ${emissionFactor}, Emissions: ${emissions.toFixed(2)} kg CO₂`);
   
-  return {
-    total: emissions.toFixed(2),
-    factor: factor.toFixed(2),
-    formula: `${nights} nights × ${factor.toFixed(2)} kg CO₂e/night = ${emissions.toFixed(2)} kg CO₂e`
-  };
+  return emissions;
 };
 
-/**
- * Calculate food & activity emissions
- * Formula: (Meals × Food Factor) + (Activities × Activity Factor)
- */
-export const calculateActivityEmissions = (activityData, nights) => {
-  const { mealsPerDay, dietType, activities } = activityData;
+// Calculate accommodation emissions
+const calculateAccommodationEmissions = (accommodationData) => {
+  console.log('🏨 Calculating accommodation emissions:', accommodationData);
   
-  // Food emissions
-  const mealFactor = dietType === 'vegetarian' || dietType === 'vegan' 
-    ? foodFactors.vegetarian 
-    : foodFactors['non-vegetarian'];
-  
-  const totalMeals = mealsPerDay * nights;
-  const foodEmissions = totalMeals * mealFactor;
-  
-  // Activity emissions
-  let activityEmissions = 0;
-  
-  // Sightseeing (assume daily)
-  if (activities.includes('sightseeing') || activities.includes('cultural')) {
-    activityEmissions += nights * activityFactors.sightseeing;
+  if (!accommodationData || !accommodationData.type) {
+    console.log('⚠️ No accommodation data provided');
+    return 0;
   }
+
+  const { type, nights, rooms } = accommodationData;
   
-  // Adventure activities
-  const adventureActivities = activities.filter(a => 
-    ['hiking', 'water-sports', 'skiing', 'adventure'].includes(a)
-  );
-  if (adventureActivities.length > 0) {
-    activityEmissions += adventureActivities.length * activityFactors.adventure;
+  // Validate inputs
+  const validNights = Number(nights) || 0;
+  const validRooms = Number(rooms) || 1;
+  
+  if (validNights <= 0) {
+    console.log('⚠️ Invalid nights:', nights);
+    return 0;
   }
+
+  const emissionFactor = EMISSION_FACTORS.accommodation[type] || 20;
+  const emissions = emissionFactor * validNights * validRooms;
   
-  // Shopping
-  if (activities.includes('shopping')) {
-    const shoppingIntensity = activityData.shoppingIntensity || 'moderate';
-    const shoppingItems = shoppingIntensity === 'heavy' ? 10 : shoppingIntensity === 'moderate' ? 5 : 2;
-    activityEmissions += shoppingItems * activityFactors.shopping;
-  }
+  console.log(`📊 Accommodation: ${type}, ${validNights} nights, ${validRooms} rooms, Factor: ${emissionFactor}, Emissions: ${emissions.toFixed(2)} kg CO₂`);
   
-  const totalEmissions = foodEmissions + activityEmissions;
-  
-  return {
-    total: totalEmissions.toFixed(2),
-    food: foodEmissions.toFixed(2),
-    activities: activityEmissions.toFixed(2),
-    mealFactor: mealFactor.toFixed(2),
-    formula: `Food: ${totalMeals} meals × ${mealFactor.toFixed(2)} + Activities: ${activityEmissions.toFixed(2)} = ${totalEmissions.toFixed(2)} kg CO₂e`
-  };
+  return emissions;
 };
 
-/**
- * Calculate total emissions
- */
-export const calculateTotalEmissions = (
-  transportData,
-  accommodationData,
-  activityData,
-  tripDetails
-) => {
-  const nights = accommodationData.nights;
-  const days = nights + 1;
+// Calculate activity emissions
+const calculateActivityEmissions = (activityData) => {
+  console.log('🎯 Calculating activity emissions:', activityData);
   
-  // Calculate each component
-  const transport = calculateTransportEmissions(transportData);
-  const accommodation = calculateAccommodationEmissions(accommodationData);
-  const activities = calculateActivityEmissions(activityData, nights);
+  if (!activityData || !activityData.activities || activityData.activities.length === 0) {
+    console.log('⚠️ No activities provided');
+    return 0;
+  }
+
+  let totalEmissions = 0;
+
+  activityData.activities.forEach(activity => {
+    const { type, count } = activity;
+    const validCount = Number(count) || 1;
+    const emissionFactor = EMISSION_FACTORS.activities[type] || 0;
+    const emissions = emissionFactor * validCount;
+    totalEmissions += emissions;
+    
+    console.log(`📊 Activity: ${type}, Count: ${validCount}, Factor: ${emissionFactor}, Emissions: ${emissions.toFixed(2)} kg CO₂`);
+  });
+
+  // Add food emissions if provided
+  if (activityData.meals) {
+    const { veg, nonVeg, vegan } = activityData.meals;
+    
+    const vegEmissions = (Number(veg) || 0) * EMISSION_FACTORS.food.veg;
+    const nonVegEmissions = (Number(nonVeg) || 0) * EMISSION_FACTORS.food.non_veg;
+    const veganEmissions = (Number(vegan) || 0) * EMISSION_FACTORS.food.vegan;
+    
+    totalEmissions += vegEmissions + nonVegEmissions + veganEmissions;
+    
+    console.log(`📊 Food: Veg(${veg}), NonVeg(${nonVeg}), Vegan(${vegan}), Emissions: ${(vegEmissions + nonVegEmissions + veganEmissions).toFixed(2)} kg CO₂`);
+  }
+
+  console.log(`✅ Total activity emissions: ${totalEmissions.toFixed(2)} kg CO₂`);
   
-  // Total
-  const total = (
-    parseFloat(transport.total) +
-    parseFloat(accommodation.total) +
-    parseFloat(activities.total)
-  ).toFixed(2);
-  
-  // Percentages
-  const transportPercent = ((parseFloat(transport.total) / parseFloat(total)) * 100).toFixed(1);
-  const accommodationPercent = ((parseFloat(accommodation.total) / parseFloat(total)) * 100).toFixed(1);
-  const activitiesPercent = ((parseFloat(activities.total) / parseFloat(total)) * 100).toFixed(1);
-  
-  return {
-    total: total,
-    transport: transport.total,
-    accommodation: accommodation.total,
-    activities: activities.total,
-    food: activities.food,
-    
-    // Percentages
-    transportPercentage: transportPercent,
-    accommodationPercentage: accommodationPercent,
-    activitiesPercentage: activitiesPercent,
-    
-    // Per unit calculations
-    perDay: (parseFloat(total) / days).toFixed(2),
-    perNight: (parseFloat(total) / nights).toFixed(2),
-    perKm: (parseFloat(transport.total) / transportData.distance).toFixed(3),
-    
-    // Days
-    days: days,
-    nights: nights,
-    
-    // Formulas for transparency
-    transportFormula: transport.formula,
-    accommodationFormula: accommodation.formula,
-    activitiesFormula: activities.formula,
-    
-    // Factors used
-    transportFactor: transport.factor,
-    accommodationFactor: accommodation.factor,
-    mealFactor: activities.mealFactor,
-    
-    // Category
-    category: parseFloat(total) < 50 ? 'Low Impact' : 
-              parseFloat(total) < 150 ? 'Medium Impact' : 'High Impact',
-    
-    // Offset cost (₹6 per kg CO₂e)
-    offsetCostINR: (parseFloat(total) * 6).toFixed(0),
-    
-    // Details
-    transportDetails: {
-      mode: transportData.mode,
-      distance: transportData.distance,
-      factor: transport.factor
-    },
-    accommodationDetails: {
-      type: accommodationData.type,
-      nights: nights,
-      factor: accommodation.factor
-    },
-    activityDetails: {
-      meals: activityData.mealsPerDay * nights,
-      dietType: activityData.dietType,
-      activities: activityData.activities.length
+  return totalEmissions;
+};
+
+// Calculate total emissions
+const calculateTotalEmissions = (transportData, accommodationData, activityData, tripDetails) => {
+  console.log('🧮 Starting total emissions calculation...');
+  console.log('Transport Data:', transportData);
+  console.log('Accommodation Data:', accommodationData);
+  console.log('Activity Data:', activityData);
+  console.log('Trip Details:', tripDetails);
+
+  try {
+    // Calculate individual components
+    const transportEmissions = calculateTransportEmissions(transportData);
+    const accommodationEmissions = calculateAccommodationEmissions(accommodationData);
+    const activityEmissions = calculateActivityEmissions(activityData);
+
+    // Ensure all values are valid numbers
+    const validTransport = Number(transportEmissions) || 0;
+    const validAccommodation = Number(accommodationEmissions) || 0;
+    const validActivity = Number(activityEmissions) || 0;
+
+    // Calculate total
+    const totalEmissions = validTransport + validAccommodation + validActivity;
+
+    const result = {
+      transportEmissions: validTransport,
+      accommodationEmissions: validAccommodation,
+      activityEmissions: validActivity,
+      totalEmissions: totalEmissions
+    };
+
+    console.log('✅ Final emissions calculation:', result);
+
+    // Validate result
+    if (isNaN(result.totalEmissions) || result.totalEmissions < 0) {
+      console.error('❌ Invalid total emissions:', result.totalEmissions);
+      throw new Error('Invalid emissions calculation result');
     }
-  };
+
+    return result;
+  } catch (error) {
+    console.error('❌ Error in calculateTotalEmissions:', error);
+    throw error;
+  }
 };
 
-/**
- * Calculate eco score (0-100)
- */
-export const calculateEcoScore = (totalEmissions, days) => {
-  const perDay = totalEmissions / days;
+// Get recommendations based on emissions
+const getRecommendations = (emissions) => {
+  const recommendations = [];
   
-  let score = 0;
+  if (emissions.transportEmissions > 100) {
+    recommendations.push({
+      category: 'Transport',
+      icon: '🚆',
+      suggestion: 'Consider taking a train instead of flying for distances under 1000km',
+      potentialSavings: emissions.transportEmissions * 0.83
+    });
+  }
   
-  if (perDay <= 10) score = 100;
-  else if (perDay <= 20) score = 90;
-  else if (perDay <= 30) score = 75;
-  else if (perDay <= 50) score = 60;
-  else if (perDay <= 75) score = 40;
-  else if (perDay <= 100) score = 25;
-  else score = 10;
+  if (emissions.accommodationEmissions > 100) {
+    recommendations.push({
+      category: 'Accommodation',
+      icon: '🏨',
+      suggestion: 'Choose eco-lodges or hostels instead of luxury hotels',
+      potentialSavings: emissions.accommodationEmissions * 0.70
+    });
+  }
   
-  return score;
+  if (emissions.activityEmissions > 50) {
+    recommendations.push({
+      category: 'Activities',
+      icon: '🎯',
+      suggestion: 'Opt for low-carbon activities like walking tours and cultural experiences',
+      potentialSavings: emissions.activityEmissions * 0.40
+    });
+  }
+  
+  return recommendations;
 };
 
-export default {
+// Calculate carbon credits earned
+const calculateCarbonCredits = (emissions) => {
+  // 1 carbon credit = 10 kg CO2e reduced
+  // Base credits for tracking
+  const trackingCredits = 10;
+  
+  // Bonus credits for low emissions
+  let bonusCredits = 0;
+  if (emissions.totalEmissions < 50) {
+    bonusCredits = 50;
+  } else if (emissions.totalEmissions < 100) {
+    bonusCredits = 30;
+  } else if (emissions.totalEmissions < 200) {
+    bonusCredits = 20;
+  }
+  
+  return trackingCredits + bonusCredits;
+};
+
+// Calculate offset cost (in rupees)
+const calculateOffsetCost = (emissions) => {
+  // Average offset cost: ₹800 per tonne CO2 = ₹0.8 per kg
+  const costPerKg = 0.8;
+  return emissions.totalEmissions * costPerKg;
+};
+
+// Get emission level
+const getEmissionLevel = (totalEmissions) => {
+  if (totalEmissions < 50) return { level: 'Excellent', color: 'green', emoji: '🌟' };
+  if (totalEmissions < 150) return { level: 'Good', color: 'emerald', emoji: '✅' };
+  if (totalEmissions < 300) return { level: 'Moderate', color: 'yellow', emoji: '⚠️' };
+  if (totalEmissions < 500) return { level: 'High', color: 'orange', emoji: '🔥' };
+  return { level: 'Very High', color: 'red', emoji: '⛔' };
+};
+
+// Export all functions
+const carbonCalculator = {
   calculateTransportEmissions,
   calculateAccommodationEmissions,
   calculateActivityEmissions,
   calculateTotalEmissions,
-  calculateEcoScore
+  getRecommendations,
+  calculateCarbonCredits,
+  calculateOffsetCost,
+  getEmissionLevel,
+  EMISSION_FACTORS
 };
+
+export default carbonCalculator;

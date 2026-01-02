@@ -4,7 +4,15 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import TripCalculator from './components/TripCalculator';
 import SimplifiedReportPage from './components/SimplifiedReportPage';
 import TripHistory from './components/TripHistory';
+import CarbonCredits from './components/CarbonCredits';
 import Login from './components/Login';
+import PreTripPlanning from './components/PreTripPlanning';
+
+// Group Trips Components
+import CreateGroupTrip from './components/GroupTrips/CreateGroupTrip';
+import GroupTripsList from './components/GroupTrips/GroupTripsList';
+import GroupTripDashboard from './components/GroupTrips/GroupTripDashboard';
+
 import carbonCalculator from './utils/carbonCalculator';
 import { saveTrip } from './services/firebaseService';
 import './App.css';
@@ -41,6 +49,10 @@ function AppContent() {
 
   const handleCalculate = async (transportData, accommodationData, activityData, tripDetails) => {
     console.log('🧮 Calculating emissions...');
+    console.log('Transport Data:', transportData);
+    console.log('Accommodation Data:', accommodationData);
+    console.log('Activity Data:', activityData);
+    console.log('Trip Details:', tripDetails);
 
     try {
       const result = calculateTotalEmissions(
@@ -52,7 +64,22 @@ function AppContent() {
 
       console.log('✅ Calculation complete:', result);
 
-      setEmissions(result);
+      // Validate result before setting
+      if (!result || typeof result.totalEmissions !== 'number' || isNaN(result.totalEmissions)) {
+        console.error('❌ Invalid emissions result:', result);
+        alert('❌ Error: Unable to calculate emissions. Please check your inputs.');
+        return;
+      }
+
+      // Validate individual emission components
+      const validatedResult = {
+        totalEmissions: Number(result.totalEmissions) || 0,
+        transportEmissions: Number(result.transportEmissions) || 0,
+        accommodationEmissions: Number(result.accommodationEmissions) || 0,
+        activityEmissions: Number(result.activityEmissions) || 0
+      };
+
+      setEmissions(validatedResult);
       setTripData({
         transportData,
         accommodationData,
@@ -60,26 +87,42 @@ function AppContent() {
         tripDetails
       });
 
+      console.log('✅ Emissions state set:', validatedResult);
+      console.log('✅ Trip data state set');
+
       // Save to Firebase
       if (currentUser) {
         console.log('💾 Saving trip to Firebase...');
+        console.log('👤 Current User ID:', currentUser.uid);
+        
         const saveResult = await saveTrip(
           currentUser.uid,
           { transportData, accommodationData, activityData, tripDetails },
-          result
+          validatedResult
         );
+        
+        console.log('💾 Save Result:', saveResult);
         
         if (saveResult.success) {
           console.log('✅ Trip saved to Firebase with ID:', saveResult.id);
           alert('✅ Trip saved successfully!');
+          
+          // Navigate to report page after successful save
+          navigate('/report');
         } else {
           console.error('❌ Failed to save trip:', saveResult.error);
-          alert(`⚠️ Failed to save trip: ${saveResult.error}`);
+          alert(`⚠️ Trip calculated but failed to save: ${saveResult.error}`);
+          
+          // Still navigate to report even if save failed
+          navigate('/report');
         }
+      } else {
+        // Navigate to report even if not logged in
+        navigate('/report');
       }
     } catch (error) {
       console.error('❌ Calculation error:', error);
-      alert('Error calculating emissions. Please check your inputs and try again.');
+      alert('❌ Error calculating emissions. Please check your inputs and try again.');
     }
   };
 
@@ -90,7 +133,7 @@ function AppContent() {
         <header className="bg-slate-900/50 backdrop-blur-sm border-b border-slate-700 sticky top-0 z-50">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/')}>
                 <div className="text-4xl">🌍</div>
                 <div>
                   <h1 className="text-2xl font-bold gradient-text">
@@ -102,7 +145,7 @@ function AppContent() {
                 </div>
               </div>
               
-              <nav className="flex gap-3 items-center">
+              <nav className="flex gap-3 items-center flex-wrap">
                 <span className="text-slate-400 text-sm hidden md:block">
                   👤 {currentUser.email}
                 </span>
@@ -113,15 +156,33 @@ function AppContent() {
                   🏠 Dashboard
                 </button>
                 <button
+                  onClick={() => navigate('/pre-trip-planning')}
+                  className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition-all text-sm font-semibold"
+                >
+                  🗺️ Plan Trip
+                </button>
+                <button
                   onClick={() => navigate('/history')}
                   className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-all text-sm font-semibold"
                 >
                   📊 Trip History
                 </button>
+                <button
+                  onClick={() => navigate('/groups')}
+                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-all text-sm font-semibold"
+                >
+                  👥 Group Trips
+                </button>
+                <button
+                  onClick={() => navigate('/credits')}
+                  className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white transition-all text-sm font-semibold"
+                >
+                  💎 Carbon Credits
+                </button>
                 {emissions && (
                   <button
                     onClick={() => navigate('/report')}
-                    className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-all text-sm font-semibold"
+                    className="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white transition-all text-sm font-semibold"
                   >
                     📄 View Report
                   </button>
@@ -161,9 +222,51 @@ function AppContent() {
                     {/* Welcome Message */}
                     <div className="mt-6 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg max-w-2xl mx-auto">
                       <p className="text-emerald-300 text-sm">
-                        🎉 Welcome back! Your trips will be automatically saved to your account.
+                        🎉 Welcome back! Your trips will be automatically saved and you'll earn carbon credits!
                       </p>
                     </div>
+                  </div>
+
+                  {/* Quick Actions Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+                    <button
+                      onClick={() => navigate('/pre-trip-planning')}
+                      className="card p-6 hover:scale-105 transition-all text-center group"
+                    >
+                      <div className="text-5xl mb-3">🗺️</div>
+                      <h3 className="text-lg font-bold text-slate-100 mb-2 group-hover:text-purple-400 transition-colors">
+                        Plan Your Trip
+                      </h3>
+                      <p className="text-sm text-slate-400">
+                        Compare transport options before you travel
+                      </p>
+                    </button>
+
+                    <button
+                      onClick={() => navigate('/history')}
+                      className="card p-6 hover:scale-105 transition-all text-center group"
+                    >
+                      <div className="text-5xl mb-3">📊</div>
+                      <h3 className="text-lg font-bold text-slate-100 mb-2 group-hover:text-emerald-400 transition-colors">
+                        Trip History
+                      </h3>
+                      <p className="text-sm text-slate-400">
+                        View all your past trips and emissions
+                      </p>
+                    </button>
+
+                    <button
+                      onClick={() => navigate('/groups')}
+                      className="card p-6 hover:scale-105 transition-all text-center group"
+                    >
+                      <div className="text-5xl mb-3">👥</div>
+                      <h3 className="text-lg font-bold text-slate-100 mb-2 group-hover:text-blue-400 transition-colors">
+                        Group Trips
+                      </h3>
+                      <p className="text-sm text-slate-400">
+                        Plan trips with friends and family
+                      </p>
+                    </button>
                   </div>
 
                   <TripCalculator onCalculate={handleCalculate} />
@@ -247,12 +350,59 @@ function AppContent() {
             }
           />
 
+          {/* Pre-Trip Planning Route - Protected */}
+          <Route
+            path="/pre-trip-planning"
+            element={
+              <ProtectedRoute>
+                <PreTripPlanning />
+              </ProtectedRoute>
+            }
+          />
+
           {/* Trip History Route - Protected */}
           <Route
             path="/history"
             element={
               <ProtectedRoute>
                 <TripHistory />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Group Trips Routes - Protected */}
+          <Route
+            path="/groups"
+            element={
+              <ProtectedRoute>
+                <GroupTripsList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/groups/create"
+            element={
+              <ProtectedRoute>
+                <CreateGroupTrip />
+              </ProtectedRoute>
+            }
+          />
+          {/* FIXED: Changed :groupId to :tripId */}
+          <Route
+            path="/group/:tripId"
+            element={
+              <ProtectedRoute>
+                <GroupTripDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Carbon Credits Route - Protected */}
+          <Route
+            path="/credits"
+            element={
+              <ProtectedRoute>
+                <CarbonCredits />
               </ProtectedRoute>
             }
           />
@@ -267,7 +417,17 @@ function AppContent() {
                     <SimplifiedReportPage emissions={emissions} tripData={tripData} />
                   </div>
                 ) : (
-                  <Navigate to="/" replace />
+                  <div className="text-center py-20">
+                    <div className="text-6xl mb-4">⚠️</div>
+                    <h2 className="text-2xl font-bold text-slate-300 mb-4">No Trip Data Available</h2>
+                    <p className="text-slate-400 mb-6">Please calculate a trip first to view the report</p>
+                    <button
+                      onClick={() => navigate('/')}
+                      className="px-6 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-all"
+                    >
+                      Calculate a Trip
+                    </button>
+                  </div>
                 )}
               </ProtectedRoute>
             }
@@ -287,7 +447,7 @@ function AppContent() {
       {currentUser && (
         <footer className="bg-slate-900/50 backdrop-blur-sm border-t border-slate-700 mt-20">
           <div className="container mx-auto px-4 py-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
               <div>
                 <h3 className="text-lg font-bold text-slate-100 mb-3">
                   🌍 Tourist Carbon Footprint
@@ -298,6 +458,18 @@ function AppContent() {
                 </p>
               </div>
               
+              <div>
+                <h3 className="text-lg font-bold text-slate-100 mb-3">Features</h3>
+                <ul className="text-sm text-slate-400 space-y-1">
+                  <li>• Pre-Trip Planning</li>
+                  <li>• Trip Calculator</li>
+                  <li>• Group Trips Planning</li>
+                  <li>• Carbon Credits System</li>
+                  <li>• Trip History</li>
+                  <li>• Achievements & Levels</li>
+                </ul>
+              </div>
+
               <div>
                 <h3 className="text-lg font-bold text-slate-100 mb-3">Methodology</h3>
                 <ul className="text-sm text-slate-400 space-y-1">
