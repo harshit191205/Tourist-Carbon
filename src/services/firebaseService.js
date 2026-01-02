@@ -39,11 +39,24 @@ const cleanUndefined = (obj) => {
   return obj;
 };
 
+// Transform emissions object to match expected format
+const transformEmissions = (emissions) => {
+  if (!emissions) return null;
+  
+  return {
+    total: emissions.totalEmissions || emissions.total || 0,
+    transport: emissions.transportEmissions || emissions.transport || 0,
+    accommodation: emissions.accommodationEmissions || emissions.accommodation || 0,
+    activities: emissions.activityEmissions || emissions.activities || 0
+  };
+};
+
 // Save a new trip
 export const saveTrip = async (userId, tripData, emissions) => {
   try {
     console.log('🔍 Attempting to save trip...');
     console.log('User ID:', userId);
+    console.log('Raw emissions:', emissions);
     
     if (!userId) {
       throw new Error('User ID is required');
@@ -53,9 +66,13 @@ export const saveTrip = async (userId, tripData, emissions) => {
       throw new Error('Firebase database is not initialized');
     }
     
+    // Transform emissions to expected format
+    const transformedEmissions = transformEmissions(emissions);
+    console.log('✨ Transformed emissions:', transformedEmissions);
+    
     // Clean undefined values from the data
     const cleanedTripData = cleanUndefined(tripData);
-    const cleanedEmissions = cleanUndefined(emissions);
+    const cleanedEmissions = cleanUndefined(transformedEmissions);
     
     const tripDoc = {
       userId,
