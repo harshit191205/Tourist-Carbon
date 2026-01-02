@@ -230,14 +230,14 @@ const PreTripPlanning = () => {
     <div className="max-w-7xl mx-auto">
       <div className="text-center mb-8">
         <h1 className="text-5xl font-bold gradient-text mb-4">
-          🗺️ Pre-Trip Carbon Planning
+           Pre-Trip Carbon Planning
         </h1>
-        <p className="text-xl text-slate-300 max-w-3xl mx-auto">
+        {/* <p className="text-xl text-slate-300 max-w-3xl mx-auto">
           Plan your trip using TomTom API for accurate route distances
-        </p>
+        </p> */}
       </div>
 
-      <div className="card p-8 mb-8">
+      <div className="card p-8 mt-8 mb-8">
         <h2 className="text-2xl font-bold gradient-text mb-6">📍 Trip Details</h2>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
