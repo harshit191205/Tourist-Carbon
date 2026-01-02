@@ -42,6 +42,18 @@ const GroupTripsList = () => {
         const isMemberByEmail = data.memberEmails?.includes(currentUser.email?.toLowerCase());
         const isCreator = data.createdBy === currentUser.uid;
         
+        // Extra debugging for the specific new trip
+        if (doc.id === 'gHffAVIpoly0YLMF3FRH') {
+          console.log('🔥🔥🔥 FOUND THE NEW TRIP! 🔥🔥🔥');
+          console.log('Members array:', data.members);
+          console.log('MemberEmails array:', data.memberEmails);
+          console.log('Current user UID:', currentUser.uid);
+          console.log('Current user email:', currentUser.email);
+          console.log('Current user email (lowercase):', currentUser.email?.toLowerCase());
+          console.log('isMemberByUid:', isMemberByUid);
+          console.log('isMemberByEmail:', isMemberByEmail);
+        }
+        
         console.log('Trip:', doc.id, {
           name: data.tripName,
           members: data.members,
